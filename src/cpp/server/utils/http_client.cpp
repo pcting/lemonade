@@ -460,6 +460,9 @@ HttpResponse HttpClient::get(const std::string& url,
     char curl_error_buffer[CURL_ERROR_SIZE] = {};
     bool verify = ssl_verify_.load();
     apply_ssl_settings(curl, verify, curl_error_buffer);
+    if (!verify) {
+        LOG(WARNING, "HttpClient") << "SSL verification DISABLED for GET " << url << std::endl;
+    }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT,
                      timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");

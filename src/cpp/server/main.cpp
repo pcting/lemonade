@@ -91,6 +91,8 @@ int main(int argc, char** argv) {
         auto config = std::make_shared<RuntimeConfig>(config_json);
         RuntimeConfig::set_global(config.get());
 
+        utils::HttpClient::set_ssl_verify(!config->disable_ssl_verification());
+
         // Initialize logging with the configured level — console + file + log hub
         configure_application_logging(config->log_level(), LoggingMode::direct_server);
 
