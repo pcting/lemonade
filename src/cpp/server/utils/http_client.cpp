@@ -27,6 +27,16 @@ std::atomic<bool> HttpClient::ssl_verify_{true};
 
 namespace {
 
+static void apply_ssl_settings(CURL* curl, bool verify, char* error_buffer) {
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verify ? 1L : 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, verify ? 2L : 0L);
+    curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYPEER, verify ? 1L : 0L);
+    curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYHOST, verify ? 2L : 0L);
+    if (error_buffer) {
+        curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, error_buffer);
+    }
+}
+
 static std::string trim_copy(const std::string& value) {
     const auto first = value.find_first_not_of(" \t\r\n\"'");
     if (first == std::string::npos) {
@@ -447,8 +457,9 @@ HttpResponse HttpClient::get(const std::string& url,
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, ssl_verify_.load() ? 1L : 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, ssl_verify_.load() ? 2L : 0L);
+    char curl_error_buffer[CURL_ERROR_SIZE] = {};
+    bool verify = ssl_verify_.load();
+    apply_ssl_settings(curl, verify, curl_error_buffer);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT,
                      timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
@@ -466,7 +477,8 @@ HttpResponse HttpClient::get(const std::string& url,
     CURLcode res = curl_easy_perform(curl);
 
     if (res != CURLE_OK) {
-        std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
+        std::string details = curl_error_buffer[0] ? std::string(curl_error_buffer) : std::string(curl_easy_strerror(res));
+        std::string error = "CURL error (" + std::to_string(static_cast<int>(res)) + "): " + details;
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
         throw std::runtime_error(error);
@@ -506,8 +518,9 @@ HttpResponse HttpClient::post(const std::string& url,
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, ssl_verify_.load() ? 1L : 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, ssl_verify_.load() ? 2L : 0L);
+    char curl_error_buffer[CURL_ERROR_SIZE] = {};
+    bool verify = ssl_verify_.load();
+    apply_ssl_settings(curl, verify, curl_error_buffer);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
@@ -541,7 +554,8 @@ HttpResponse HttpClient::post(const std::string& url,
     CURLcode res = curl_easy_perform(curl);
 
     if (res != CURLE_OK) {
-        std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
+        std::string details = curl_error_buffer[0] ? std::string(curl_error_buffer) : std::string(curl_easy_strerror(res));
+        std::string error = "CURL error (" + std::to_string(static_cast<int>(res)) + "): " + details;
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
         throw std::runtime_error(error);
@@ -593,15 +607,17 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, ssl_verify_.load() ? 1L : 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, ssl_verify_.load() ? 2L : 0L);
+    char curl_error_buffer[CURL_ERROR_SIZE] = {};
+    bool verify = ssl_verify_.load();
+    apply_ssl_settings(curl, verify, curl_error_buffer);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     CURLcode res = curl_easy_perform(curl);
 
     if (res != CURLE_OK) {
-        std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
+        std::string details = curl_error_buffer[0] ? std::string(curl_error_buffer) : std::string(curl_easy_strerror(res));
+        std::string error = "CURL error (" + std::to_string(static_cast<int>(res)) + "): " + details;
         curl_mime_free(mime);
         curl_easy_cleanup(curl);
         throw std::runtime_error(error);
@@ -689,8 +705,9 @@ HttpResponse HttpClient::post_stream(const std::string& url,
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, ssl_verify_.load() ? 1L : 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, ssl_verify_.load() ? 2L : 0L);
+    char curl_error_buffer[CURL_ERROR_SIZE] = {};
+    bool verify = ssl_verify_.load();
+    apply_ssl_settings(curl, verify, curl_error_buffer);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
@@ -722,7 +739,8 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     response.status_code = static_cast<int>(response_code);
     response.curl_code = static_cast<int>(res);
-    response.curl_error = (res == CURLE_OK) ? std::string() : std::string(curl_easy_strerror(res));
+    std::string detailed_error = curl_error_buffer[0] ? std::string(curl_error_buffer) : std::string(curl_easy_strerror(res));
+    response.curl_error = (res == CURLE_OK) ? std::string() : detailed_error;
 
     // For streaming, libcurl can report CURLE_PARTIAL_FILE or CURLE_RECV_ERROR
     // after a backend closes the connection. Do not throw here because the SSE
@@ -796,6 +814,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, static_cast<long>(options.low_speed_time));
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, options.ssl_verify ? 1L : 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, options.ssl_verify ? 2L : 0L);
+    curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYPEER, options.ssl_verify ? 1L : 0L);
+    curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYHOST, options.ssl_verify ? 2L : 0L);
 
     if (resume_from > 0) {
         curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(resume_from));
@@ -957,6 +977,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
                 curl_easy_setopt(head_curl, CURLOPT_NOBODY, 1L);  // HEAD request
                 curl_easy_setopt(head_curl, CURLOPT_SSL_VERIFYPEER, options.ssl_verify ? 1L : 0L);
                 curl_easy_setopt(head_curl, CURLOPT_SSL_VERIFYHOST, options.ssl_verify ? 2L : 0L);
+                curl_easy_setopt(head_curl, CURLOPT_PROXY_SSL_VERIFYPEER, options.ssl_verify ? 1L : 0L);
+                curl_easy_setopt(head_curl, CURLOPT_PROXY_SSL_VERIFYHOST, options.ssl_verify ? 2L : 0L);
                 if (!apply_http_security_policy(head_curl, policy, true)) {
                     curl_easy_cleanup(head_curl);
                     result.error_message = "Resume failed (HTTP 416) - could not apply security policy";
@@ -1281,8 +1303,7 @@ bool HttpClient::is_reachable(const std::string& url,
         curl_easy_cleanup(curl);
         return false;
     }
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, ssl_verify_.load() ? 1L : 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, ssl_verify_.load() ? 2L : 0L);
+    apply_ssl_settings(curl, ssl_verify_.load(), nullptr);
 
     CURLcode res = curl_easy_perform(curl);
 
