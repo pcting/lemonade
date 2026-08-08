@@ -123,5 +123,6 @@
     "cpu_bin": "builtin",
     "npu_args": "",
     "npu_bin": "builtin"
-  }
+  },
+  "disable_ssl_verification": false
 }

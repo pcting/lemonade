@@ -646,6 +646,7 @@ namespace lemon::backends {
                 archive_download_opts.expected_hash = lookup_expected_asset_hash(
                     spec.recipe, backend, expected_version, repo, filename);
                 archive_download_opts.resume_partial = false;
+                archive_download_opts.ssl_verify = !lemon::RuntimeConfig::global()->disable_ssl_verification();
 
                 auto download_result = utils::HttpClient::download_file(
                     url, zip_path, http_progress_cb, {}, archive_download_opts);
@@ -703,6 +704,7 @@ namespace lemon::backends {
                     part_download_opts.expected_hash = lookup_expected_asset_hash(
                         spec.recipe, backend, expected_version, repo, part_filename);
                     part_download_opts.resume_partial = false;
+                    part_download_opts.ssl_verify = !lemon::RuntimeConfig::global()->disable_ssl_verification();
 
                     auto part_result = utils::HttpClient::download_file(
                         part_url, part_path, part_http_cb, {}, part_download_opts);
@@ -1119,6 +1121,7 @@ namespace lemon::backends {
         utils::DownloadOptions therock_download_opts;
         therock_download_opts.expected_hash = lookup_expected_asset_hash(
             "therock", arch, version, "", filename);
+        therock_download_opts.ssl_verify = !lemon::RuntimeConfig::global()->disable_ssl_verification();
 
         auto download_result = utils::HttpClient::download_file(
             url,

@@ -193,10 +193,14 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
 
         LOG(INFO, "WhisperServer") << "Downloading from: " << hf_url << std::endl;
 
+        utils::DownloadOptions whisper_opts;
+        whisper_opts.ssl_verify = !lemon::RuntimeConfig::global()->disable_ssl_verification();
         auto download_result = utils::HttpClient::download_file(
             hf_url,
             cache_path.string(),
-            utils::create_throttled_progress_callback()
+            utils::create_throttled_progress_callback(),
+            {},
+            whisper_opts
         );
 
         if (!download_result.success) {

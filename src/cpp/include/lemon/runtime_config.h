@@ -59,6 +59,7 @@ public:
     bool auto_check_model_updates() const;
     bool no_fetch_executables() const;
     bool disable_model_filtering() const;
+    bool disable_ssl_verification() const;
     bool enable_dgpu_gtt() const;
     std::string rocm_channel() const;
     std::string rocm_channel_for_recipe(const std::string& recipe) const;

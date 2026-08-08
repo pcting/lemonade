@@ -1855,6 +1855,12 @@ void Server::run() {
     std::string host = config_->host();
     LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
 
+    if (config_->disable_ssl_verification()) {
+        LOG(WARNING, "Server") << "SSL certificate verification is DISABLED. "
+                                  "Downloads will not verify SSL certificates." << std::endl;
+    }
+    utils::HttpClient::set_ssl_verify(!config_->disable_ssl_verification());
+
     std::string ipv4 = resolve_host_to_ip(AF_INET, host);
     std::string ipv6 = resolve_host_to_ip(AF_INET6, host);
 
@@ -6383,6 +6389,11 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                     LOG(INFO, "Server") << "Telemetry endpoint changed to: " << config_->telemetry_otlp_endpoint() << std::endl;
                 }
             }
+        } else if (key == "disable_ssl_verification") {
+            bool disable = config_->disable_ssl_verification();
+            LOG(INFO, "Server") << "SSL certificate verification "
+                                << (disable ? "DISABLED" : "enabled") << std::endl;
+            utils::HttpClient::set_ssl_verify(!disable);
         } else if (value.is_object()) {
             // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
             // Recipe defaults (e.g. default_backend) are derived from these settings, so

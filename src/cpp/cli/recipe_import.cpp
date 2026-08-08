@@ -2,6 +2,7 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/model_registry.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 
@@ -175,9 +176,21 @@ bool download_recipe_to_temp_file(const std::string& download_url,
 
     temp_file_out = temp_dir / "recipe.json";
 
+    lemon::utils::DownloadOptions import_opts;
+    {
+        std::string cache_dir = lemon::utils::get_cache_dir();
+        std::ifstream config_file(cache_dir + "/config.json");
+        nlohmann::json config;
+        if (config_file.is_open()) {
+            try {
+                config_file >> config;
+            } catch (...) {}
+        }
+        import_opts.ssl_verify = !config.value("disable_ssl_verification", false);
+    }
     lemon::utils::DownloadResult result;
     try {
-        result = lemon::utils::HttpClient::download_file(download_url, temp_file_out.string());
+        result = lemon::utils::HttpClient::download_file(download_url, temp_file_out.string(), nullptr, {}, import_opts);
     } catch (const std::exception& e) {
         std::filesystem::remove(temp_file_out, ec);
         std::filesystem::remove(temp_dir, ec);

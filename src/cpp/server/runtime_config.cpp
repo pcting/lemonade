@@ -291,6 +291,11 @@ bool RuntimeConfig::disable_model_filtering() const {
     return config_["disable_model_filtering"].get<bool>();
 }
 
+bool RuntimeConfig::disable_ssl_verification() const {
+    std::shared_lock lock(mutex_);
+    return config_.value("disable_ssl_verification", false);
+}
+
 bool RuntimeConfig::enable_dgpu_gtt() const {
     std::shared_lock lock(mutex_);
     return config_["enable_dgpu_gtt"].get<bool>();
@@ -544,7 +549,9 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
                key == "no_fetch_executables" ||
-               key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
+               key == "disable_model_filtering" ||
+               key == "disable_ssl_verification" ||
+               key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'" + key + "' must be a boolean");
         }

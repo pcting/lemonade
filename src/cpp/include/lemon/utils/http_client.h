@@ -82,6 +82,7 @@ struct DownloadOptions {
     int no_progress_timeout = 60;      // Seconds without byte progress before aborting (0 = disabled)
     bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
     bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
+    bool ssl_verify = true;                      // Verify SSL certificates (set false for self-signed/invalid certs)
 
     // Optional content verification. expected_hash accepts plain hex or
     // prefixed values like "sha256:<hex>", "sha1:<hex>", or
@@ -100,6 +101,14 @@ public:
 
     static long get_default_timeout() {
         return default_timeout_seconds_;
+    }
+
+    static void set_ssl_verify(bool verify) {
+        ssl_verify_.store(verify);
+    }
+
+    static bool get_ssl_verify() {
+        return ssl_verify_.load();
     }
 
     // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
@@ -153,6 +162,7 @@ public:
 
 private:
     static std::atomic<long> default_timeout_seconds_;
+    static std::atomic<bool> ssl_verify_;
 
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,
