@@ -139,6 +139,39 @@ docker run -d \
 >
 > Then use the numbers, e.g. `--group-add 992 --group-add 44`.
 
+### Gufo on Strix Halo (Engine Bundled in Image)
+
+Official images bundle the gufo inference engine at `/usr/local/bin/gufo`,
+built from the pinned upstream release recorded in the Dockerfile
+(`ARG GUFO_VERSION`). On a Linux host with a gfx1151 GPU (Radeon 8060S), the
+`gufo` recipe is discovered automatically — no config key or environment
+variable is needed; use the same `--device=/dev/kfd --device=/dev/dri` and
+group grants described in the ROCm section above. Hosts where `/dev/kfd` and
+`/dev/dri` render nodes are mode `0666` (some ROCm configurations) need no
+`--group-add` at all; otherwise pass the host's owning groups as shown.
+In-container ASR serving was verified on a Radeon 8060S host with `0666`
+device nodes: the unprivileged runtime user reached the GPU with no group
+grants.
+
+Four notes:
+
+- Explicit overrides still win inside the container: setting
+  `LEMONADE_GUFO_SERVER_BIN` (or the `gufo.server_bin` config key) to another
+  executable replaces the bundled engine.
+- Locally registered or already-downloaded checkpoints of supported families
+  also appear with a `-Gufo` companion entry (`extra.<name>-Gufo`), so models
+  kept for another engine can be run on gufo without re-downloading. Set
+  `engine_twins=false` to hide those generated entries.
+- Images also seed a starter model registry (`docker/user_models.json`) into the
+  config directory, so a volume created for the first time already lists the
+  engine's own models, including the sharded Qwen3.8-Flash-Next checkpoint pair.
+  A config volume that already exists keeps its own `user_models.json` — Docker
+  only copies image content into a named volume while it is empty.
+- Outside containers the engine remains system-managed — Lemonade never
+  downloads gufo; build it from source (Nix or CMake) or point the override at
+  an existing build. The image bundling exists precisely because upstream
+  publishes no standalone binaries.
+
 ### Docker Run with AMD GPU Passthrough using ROCm on WSL
 
 Make sure you follow install steps described in [ROCm for WSL](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html)

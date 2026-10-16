@@ -1,0 +1,118 @@
+{
+  "DeepSeek-V4-Flash-0731-GGUF-UD-IQ1_S": {
+    "checkpoints": {
+      "main": "unsloth/DeepSeek-V4-Flash-0731-GGUF:UD-IQ1_S"
+    },
+    "labels": [
+      "chat",
+      "custom"
+    ],
+    "recipe": "llamacpp",
+    "suggested": true
+  },
+  "GLM-5.3-Flash-GGUF-UD-IQ1_S": {
+    "checkpoints": {
+      "main": "unsloth/GLM-5.3-Flash-GGUF:UD-IQ1_S",
+      "mmproj": "unsloth/GLM-5.3-Flash-GGUF:mmproj-BF16.gguf"
+    },
+    "labels": [
+      "chat",
+      "custom"
+    ],
+    "recipe": "llamacpp",
+    "suggested": true
+  },
+  "Muse-Glimmer-30B-GGUF-Q8_0": {
+    "checkpoints": {
+      "main": "unsloth/Muse-Glimmer-30B-GGUF:Q8_0",
+      "mmproj": "unsloth/Muse-Glimmer-30B-GGUF:mmproj-Muse-Glimmer-30B-BF16.gguf"
+    },
+    "labels": [
+      "chat",
+      "custom"
+    ],
+    "recipe": "llamacpp",
+    "suggested": true
+  },
+  "Qwen3.6-35B-A3B-MTP-GGUF-Q8_0": {
+    "checkpoints": {
+      "main": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Q8_0",
+      "mmproj": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:mmproj-BF16.gguf"
+    },
+    "labels": [
+      "chat",
+      "custom"
+    ],
+    "recipe": "llamacpp",
+    "suggested": true
+  },
+  "Qwen3.8-27B-GGUF-Gufo": {
+    "checkpoints": {
+      "main": "unsloth/Qwen3.8-27B-GGUF:UD-Q8_K_XL",
+      "mmproj": "unsloth/Qwen3.8-27B-GGUF:mmproj-BF16.gguf"
+    },
+    "labels": [
+      "chat",
+      "custom"
+    ],
+    "recipe": "gufo",
+    "suggested": true
+  },
+  "Qwen3.8-Flash-Next-GGUF-Gufo": {
+    "checkpoints": {
+      "draft": "unsloth/Qwen3.8-Flash-Next-GGUF:MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+      "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL",
+      "mmproj": "unsloth/Qwen3.8-Flash-Next-GGUF:mmproj-BF16.gguf"
+    },
+    "labels": [
+      "chat",
+      "custom",
+      "mtp",
+      "reasoning",
+      "tool-calling",
+      "vision"
+    ],
+    "recipe": "gufo",
+    "suggested": true
+  },
+  "Qwen3.8-Flash-Next-Halogen": {
+    "checkpoints": {
+      "main": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-v2.hgn"
+    },
+    "labels": [
+      "chat",
+      "custom"
+    ],
+    "recipe": "halogen",
+    "recipe_options": {
+      "halogen_npu_dir": "/home/pcting/.local/share/lemonade/halogen-npu"
+    },
+    "suggested": true
+  },
+  "decider-0.8b": {
+    "checkpoints": {
+      "main": "decider-0.8b"
+    },
+    "cloud_provider": "halogen",
+    "labels": [
+      "chat",
+      "custom"
+    ],
+    "recipe": "cloud",
+    "size": 0.0,
+    "suggested": true
+  },
+  "qwen3.5-2b": {
+    "checkpoints": {
+      "main": "qwen3.5-2b"
+    },
+    "cloud_provider": "halogen",
+    "labels": [
+      "chat",
+      "custom"
+    ],
+    "recipe": "cloud",
+    "size": 0.0,
+    "suggested": true
+  }
+}

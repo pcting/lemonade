@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,6 +40,10 @@ public:
     virtual void stop();
     virtual bool running() const;
 
+    // Exit status of a child that had already exited when stop() reaped it.
+    // Unset when stop() terminated a running server, or when nothing started.
+    std::optional<int> exit_code() const { return exit_code_; }
+
     utils::ProcessHandle handle() const { return handle_; }
     const std::vector<std::string>& command_line() const { return command_line_; }
 
@@ -48,6 +53,7 @@ protected:
 
     utils::ProcessHandle handle_{nullptr, 0};
     std::vector<std::string> command_line_;
+    std::optional<int> exit_code_;
 
 private:
     ProcessOutput output_;

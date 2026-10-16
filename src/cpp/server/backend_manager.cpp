@@ -371,6 +371,13 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
     }
 
     if (!backend_versions_.contains(recipe) || !backend_versions_[recipe].is_object()) {
+        // A recipe Lemonade does not download has no release to pin: the
+        // system-managed engines resolve a binary the user supplied, so the
+        // install path reaches its own refusal instead of failing here first.
+        // Unknown recipes still raise, so a typo is not silently accepted.
+        if (backends::try_get_spec_for_recipe(recipe) != nullptr) {
+            return "";
+        }
         throw std::runtime_error("backend_versions.json is missing '" + recipe + "' section");
     }
     const auto& recipe_config = backend_versions_[recipe];

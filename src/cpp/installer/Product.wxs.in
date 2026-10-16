@@ -218,6 +218,10 @@
         <File Id="architecture_defaults.json" Source="$(var.BuildDir)\Release\resources\architecture_defaults.json" KeyPath="yes" />
       </Component>
 
+      <Component Id="GufoCompatJson" Directory="ResourcesDir" Guid="bbe26ed1-6d6c-4257-9eaa-39ba32a7fbd6">
+        <File Id="gufo_compat.json" Source="$(var.BuildDir)\Release\resources\gufo_compat.json" KeyPath="yes" />
+      </Component>
+
       <Component Id="FaviconIco" Directory="StaticDir" Guid="c0d1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f">
         <File Id="favicon.ico" Source="$(var.BuildDir)\Release\resources\static\favicon.ico" KeyPath="yes" />
       </Component>

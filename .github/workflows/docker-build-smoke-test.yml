@@ -68,6 +68,42 @@ jobs:
           docker exec lemonade-test sh -lc 'command -v lemonade && command -v lemond'
           docker exec lemonade-test sh -lc 'lemonade status'
 
+      - name: Bundled gufo engine check
+        run: |
+          # The image bundles a pinned gufo engine (Dockerfile ARG GUFO_VERSION).
+          # CPU-only runners can't reach a GPU, so assert binary presence and
+          # version — the recipe may report any non-installed state here.
+          EXPECTED=$(grep -oE 'ARG GUFO_VERSION=[vV]?[0-9][0-9.]*' Dockerfile | sed -E 's/.*=v?//')
+          if [ -z "$EXPECTED" ]; then
+              echo "Could not read pinned gufo version from Dockerfile"
+              exit 1
+          fi
+          # Floor: the pin must satisfy the backend's own minimum gate, or the
+          # version-match grep would pass while every model load fails at runtime.
+          # The constant is defined in the backend header, not the .cpp.
+          MINIMUM=$(sed -n 's/.*kMinGufoVersion = "\([0-9.]*\)".*/\1/p' src/cpp/include/lemon/backends/gufo/gufo.h | head -1)
+          if [ -z "$MINIMUM" ]; then
+              echo "Could not read kMinGufoVersion from the backend header"
+              exit 1
+          fi
+          if [ "$(printf '%s\n%s\n' "$MINIMUM" "$EXPECTED" | sort -V | head -1)" != "$MINIMUM" ]; then
+              echo "Pinned gufo version ${EXPECTED} is below the backend minimum ${MINIMUM}"
+              exit 1
+          fi
+          # Mirror anchor: the table records the release it mirrors, and that has to
+          # be the release the image bundles, or the table describes another engine.
+          SHIPPED_PIN=$(docker exec lemonade-test sh -lc "sed -n 's/.*\"pin\": \"\(v[0-9.]*\)\".*/\1/p' /opt/lemonade/resources/gufo_compat.json" | head -1)
+          if [ "$SHIPPED_PIN" != "v${EXPECTED}" ]; then
+              echo "Shipped gufo_compat.json mirrors ${SHIPPED_PIN}, but the image bundles v${EXPECTED}"
+              exit 1
+          fi
+          docker exec lemonade-test sh -lc "gufo --version" | grep -q "gufo version ${EXPECTED}" || {
+              echo "Bundled gufo version does not match Dockerfile pin ${EXPECTED}"
+              exit 1
+          }
+          docker exec lemonade-test sh -lc 'command -v ffmpeg && command -v ffprobe'
+          curl -sf http://localhost:13305/api/v1/system-info | grep -q '"gufo"'
+
       - name: Load model
         run: |
           curl -X POST http://localhost:13305/api/v1/load \

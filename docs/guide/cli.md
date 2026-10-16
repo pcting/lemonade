@@ -430,6 +430,14 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
+#### Gufo (Strix Halo) (`gufo` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--gufo BACKEND` | Gufo backend to use | Auto-detected |
+| `--gufo-args ARGS` | Custom arguments to pass to gufo serve | `""` |
+
 #### TheNoise ROCm (`thenoise` recipe)
 
 | Option | Description | Default |

@@ -17,6 +17,7 @@ import struct
 import zlib
 import requests
 
+from utils.capabilities import get_current_config, get_test_model, supports
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
@@ -28,6 +29,15 @@ from utils.test_models import (
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
 )
+
+
+def _image_model() -> str:
+    """SD-Turbo is the sd-cpp suite fixture; other backends run the same
+    assertions against their capabilities' image test model."""
+    wrapped, _, _ = get_current_config()
+    if wrapped in (None, "", "sd-cpp"):
+        return SD_MODEL
+    return get_test_model("image")
 
 
 def create_minimal_png(width=8, height=8):
@@ -58,7 +68,7 @@ class StableDiffusionTests(ServerTestBase):
     def test_001_basic_image_generation(self):
         """Test basic image generation with SD-Turbo."""
         payload = {
-            "model": SD_MODEL,
+            "model": _image_model(),
             "prompt": "A red circle",
             "size": "256x256",  # Smallest practical size for speed
             "steps": 2,  # SD-Turbo works well with few steps
@@ -66,7 +76,7 @@ class StableDiffusionTests(ServerTestBase):
             "response_format": "b64_json",
         }
 
-        print(f"[INFO] Sending image generation request with model {SD_MODEL}")
+        print(f"[INFO] Sending image generation request with model {_image_model()}")
         print(f"[INFO] Using minimal settings (256x256, 2 steps) for CI speed")
 
         response = requests.post(
@@ -110,7 +120,7 @@ class StableDiffusionTests(ServerTestBase):
     def test_002_missing_prompt_error(self):
         """Test error handling when prompt is missing."""
         payload = {
-            "model": SD_MODEL,
+            "model": _image_model(),
             "size": "256x256",
             # No prompt
         }
@@ -156,7 +166,7 @@ class StableDiffusionTests(ServerTestBase):
     def test_004_image_generation_with_steps(self):
         """Test image generation with custom steps parameter."""
         payload = {
-            "model": SD_MODEL,
+            "model": _image_model(),
             "prompt": "A blue square",
             "size": "256x256",
             "steps": 2,
@@ -188,8 +198,10 @@ class StableDiffusionTests(ServerTestBase):
     # Test 5: Image generation with custom cfg_scale parameter
     def test_005_image_generation_with_cfg_scale(self):
         """Test image generation with custom cfg_scale parameter."""
+        if not supports("image_cfg_scale"):
+            self.skipTest("backend image serving has no guidance-scale input")
         payload = {
-            "model": SD_MODEL,
+            "model": _image_model(),
             "prompt": "A green triangle",
             "size": "256x256",
             "steps": 2,
@@ -225,7 +237,7 @@ class StableDiffusionTests(ServerTestBase):
     def test_006_image_generation_with_seed(self):
         """Test image generation with explicit seed parameter."""
         payload = {
-            "model": SD_MODEL,
+            "model": _image_model(),
             "prompt": "A yellow star",
             "size": "256x256",
             "steps": 2,
@@ -385,7 +397,7 @@ class StableDiffusionTests(ServerTestBase):
         """Test that non-multipart requests to /images/edits return 400."""
         response = requests.post(
             f"{self.base_url}/images/edits",
-            json={"model": SD_MODEL, "prompt": "test"},
+            json={"model": _image_model(), "prompt": "test"},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(
@@ -401,7 +413,7 @@ class StableDiffusionTests(ServerTestBase):
         """Test that /images/edits returns 400 when image file is missing."""
         response = requests.post(
             f"{self.base_url}/images/edits",
-            data={"model": SD_MODEL, "prompt": "test"},
+            data={"model": _image_model(), "prompt": "test"},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(
@@ -419,7 +431,7 @@ class StableDiffusionTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/images/edits",
             files={"image": ("test.png", io.BytesIO(png_bytes), "image/png")},
-            data={"model": SD_MODEL},
+            data={"model": _image_model()},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(
@@ -437,7 +449,7 @@ class StableDiffusionTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/images/edits",
             files={"image": ("test.png", io.BytesIO(png_bytes), "image/png")},
-            data={"model": SD_MODEL, "prompt": "test", "n": "20"},
+            data={"model": _image_model(), "prompt": "test", "n": "20"},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(
@@ -451,7 +463,7 @@ class StableDiffusionTests(ServerTestBase):
         """Test that non-multipart requests to /images/variations return 400."""
         response = requests.post(
             f"{self.base_url}/images/variations",
-            json={"model": SD_MODEL},
+            json={"model": _image_model()},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(
@@ -467,7 +479,7 @@ class StableDiffusionTests(ServerTestBase):
         """Test that /images/variations returns 400 when image file is missing."""
         response = requests.post(
             f"{self.base_url}/images/variations",
-            data={"model": SD_MODEL},
+            data={"model": _image_model()},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(
@@ -481,14 +493,16 @@ class StableDiffusionTests(ServerTestBase):
 
     def test_015_image_edit_basic(self):
         """Test basic image edit returns a valid PNG."""
+        if not supports("image_edits"):
+            self.skipTest("backend does not serve image edits")
         png_bytes = create_minimal_png(256, 256)
-        print(f"[INFO] Sending image edit request with model {SD_MODEL}")
+        print(f"[INFO] Sending image edit request with model {_image_model()}")
 
         response = requests.post(
             f"{self.base_url}/images/edits",
             files={"image": ("test.png", io.BytesIO(png_bytes), "image/png")},
             data={
-                "model": SD_MODEL,
+                "model": _image_model(),
                 "prompt": "A red circle",
                 "size": "256x256",
                 "n": "1",
@@ -515,14 +529,16 @@ class StableDiffusionTests(ServerTestBase):
 
     def test_016_image_variations_basic(self):
         """Test basic image variations returns a valid PNG."""
+        if not supports("image_variations"):
+            self.skipTest("backend does not serve image variations")
         png_bytes = create_minimal_png(256, 256)
-        print(f"[INFO] Sending image variations request with model {SD_MODEL}")
+        print(f"[INFO] Sending image variations request with model {_image_model()}")
 
         response = requests.post(
             f"{self.base_url}/images/variations",
             files={"image": ("test.png", io.BytesIO(png_bytes), "image/png")},
             data={
-                "model": SD_MODEL,
+                "model": _image_model(),
                 "size": "256x256",
                 "n": "1",
                 "response_format": "b64_json",
@@ -548,6 +564,8 @@ class StableDiffusionTests(ServerTestBase):
 
     def test_017_upscale_missing_image(self):
         """Test that /images/upscale returns 400 when image field is missing."""
+        if not supports("image_upscale"):
+            self.skipTest("backend does not serve image upscaling")
         payload = {"model": ESRGAN_MODEL}
 
         response = requests.post(
@@ -567,6 +585,8 @@ class StableDiffusionTests(ServerTestBase):
 
     def test_018_upscale_missing_model(self):
         """Test that /images/upscale returns 400 when model field is missing."""
+        if not supports("image_upscale"):
+            self.skipTest("backend does not serve image upscaling")
         png_bytes = create_minimal_png()
         b64_image = base64.b64encode(png_bytes).decode("utf-8")
         payload = {"image": b64_image}
@@ -588,6 +608,8 @@ class StableDiffusionTests(ServerTestBase):
 
     def test_019_upscale_invalid_model(self):
         """Test that /images/upscale returns 404 for an unknown model name."""
+        if not supports("image_upscale"):
+            self.skipTest("backend does not serve image upscaling")
         png_bytes = create_minimal_png()
         b64_image = base64.b64encode(png_bytes).decode("utf-8")
         payload = {"image": b64_image, "model": "nonexistent-upscale-model"}
@@ -609,9 +631,11 @@ class StableDiffusionTests(ServerTestBase):
 
     def test_020_upscale_basic(self):
         """Test basic upscale: generate an image then upscale it."""
+        if not supports("image_upscale"):
+            self.skipTest("backend does not serve image upscaling")
         # First generate an image
         gen_payload = {
-            "model": SD_MODEL,
+            "model": _image_model(),
             "prompt": "A red circle",
             "size": "256x256",
             "steps": 2,
@@ -667,14 +691,16 @@ class StableDiffusionTests(ServerTestBase):
 
     def test_021_image_edit_array_field(self):
         """Test basic image edit using array parameter syntax."""
+        if not supports("image_edits"):
+            self.skipTest("backend does not serve image edits")
         png_bytes = create_minimal_png(256, 256)
-        print(f"[INFO] Sending image edit request with model {SD_MODEL}")
+        print(f"[INFO] Sending image edit request with model {_image_model()}")
 
         response = requests.post(
             f"{self.base_url}/images/edits",
             files={"image[]": ("test.png", io.BytesIO(png_bytes), "image/png")},
             data={
-                "model": SD_MODEL,
+                "model": _image_model(),
                 "prompt": "A red circle",
                 "size": "256x256",
                 "n": "1",
@@ -704,6 +730,6 @@ if __name__ == "__main__":
     run_server_tests(
         StableDiffusionTests,
         "STABLE DIFFUSION TESTS",
-        wrapped_server="sd-cpp",
+        default_wrapped_server="sd-cpp",
         modality="stable_diffusion",
     )

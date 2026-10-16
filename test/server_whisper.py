@@ -265,12 +265,14 @@ class WhisperTests(ServerTestBase):
 
         model = _get_whisper_model()
         # FLM ignores response_format and always answers with compact
-        # {model, text} JSON, so it cannot produce timestamped subtitles.
-        # Those formats are rejected up front and covered by
-        # test_002d_transcription_subtitle_formats_unsupported_on_flm.
-        is_flm = get_config().get("wrapped_server") == "flm"
+        # {model, text} JSON, so it cannot produce timestamped subtitles. gufo
+        # passes the format through to its engine, which serves json, text and
+        # verbose_json and refuses the rest — so both backends reject the
+        # subtitle formats rather than answering with plain text, which
+        # test_002d and test_002e assert.
+        no_subtitle_formats = get_config().get("wrapped_server") in ("flm", "gufo")
         formats = ["json", "verbose_json", "text"]
-        if not is_flm:
+        if not no_subtitle_formats:
             formats += ["srt", "vtt"]
 
         for response_format in formats:
@@ -368,6 +370,37 @@ class WhisperTests(ServerTestBase):
                 self.assertIn("error", result)
                 self.assertIn(response_format, result["error"]["message"])
                 print(f"[OK] FLM correctly rejected response_format={response_format}")
+
+    def test_002e_transcription_subtitle_formats_rejected_on_gufo(self):
+        """Test SRT/VTT are rejected on gufo rather than returning plain text."""
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
+
+        if get_config().get("wrapped_server") != "gufo":
+            self.skipTest("Subtitle formats are supported on this backend")
+
+        for response_format in ["srt", "vtt"]:
+            with self.subTest(response_format=response_format):
+                with open(self._test_audio_path, "rb") as audio_file:
+                    response = requests.post(
+                        f"{self.base_url}/audio/transcriptions",
+                        files={"file": ("test_speech.wav", audio_file, "audio/wav")},
+                        data={
+                            "model": _get_whisper_model(),
+                            "response_format": response_format,
+                        },
+                        timeout=TIMEOUT_MODEL_OPERATION,
+                    )
+
+                self.assertEqual(
+                    response.status_code,
+                    400,
+                    f"Expected 400 for {response_format} on gufo, "
+                    f"got {response.status_code}: {response.text}",
+                )
+                result = response.json()
+                self.assertIn("error", result)
+                self.assertIn(response_format, str(result["error"]))
+                print(f"[OK] gufo correctly rejected response_format={response_format}")
 
     def test_002c_transcription_unsupported_response_format(self):
         """Test unsupported audio transcription response_format is rejected."""

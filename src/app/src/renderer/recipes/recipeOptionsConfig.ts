@@ -215,6 +215,22 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     description: 'Custom arguments to pass to llama-server',
   },
 
+  // Gufo-specific options
+  gufoBackend: {
+    type: 'string',
+    default: '',
+    label: 'Gufo Backend',
+    description: 'Gufo backend to use',
+    isBackendOption: true,
+    backendRecipe: 'gufo',
+  },
+  gufoArgs: {
+    type: 'string',
+    default: '',
+    label: 'Gufo Arguments',
+    description: 'Custom arguments to pass to gufo serve',
+  },
+
   // vLLM-specific options
   vllmBackend: {
     type: 'string',
@@ -356,7 +372,7 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm' | 'thinksound' | 'acestep' | 'trellis' | 'openmoss';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm' | 'gufo' | 'thinksound' | 'acestep' | 'trellis' | 'openmoss';
 
 /**
  * Maps recipe names to the option keys they support.
@@ -370,6 +386,9 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'ryzenai-llm': ['ctxSize', 'pinned', 'saveOptions'],
   'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'mergeArgs', 'pinned', 'saveOptions'],
   'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'pinned', 'saveOptions'],
+  // Mirrors the gufo descriptor: ctx_size + gufo_backend/gufo_args
+  // (gufo_backend is passed to clients as the `gufo_backend` option).
+  'gufo': ['ctxSize', 'gufoBackend', 'gufoArgs', 'mergeArgs', 'pinned', 'saveOptions'],
   'thinksound': ['thinksoundBackend', 'pinned', 'saveOptions'],
   'acestep': ['acestepBackend', 'pinned', 'saveOptions'],
   'trellis': ['trellisBackend', 'pinned', 'saveOptions'],
@@ -413,6 +432,8 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   cfgScale: 'cfg_scale',
   vllmBackend: 'vllm_backend',
   vllmArgs: 'vllm_args',
+  gufoBackend: 'gufo_backend',
+  gufoArgs: 'gufo_args',
   saveOptions: 'save_options',
 };
 

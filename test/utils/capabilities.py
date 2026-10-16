@@ -141,6 +141,35 @@ CAPABILITIES = {
                 "embedding": "embed-gemma-300m-FLM",
             },
         },
+        "gufo": {
+            "backends": ["rocm", "system"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "embeddings": False,
+                "embeddings_batch": False,
+                "reranking": False,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "echo_parameter": False,
+                "generation_parameters": False,
+                "slots": False,
+                "static_max_context_window": True,
+                "reasoning_by_default": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.8-27B-GGUF",
+                "tool_calling": "Qwen3.8-27B-GGUF",
+            },
+        },
     },
     "whisper": {
         "whispercpp": {
@@ -180,6 +209,18 @@ CAPABILITIES = {
                 "audio": "Moonshine-Tiny-Streaming",
             },
         },
+        "gufo": {
+            "backends": ["rocm", "system"],
+            "supports": {
+                "transcription": True,
+                "transcription_with_language": True,
+                "rai_cache": False,
+                "realtime_websocket": False,
+            },
+            "test_models": {
+                "audio": "Qwen3-ASR-1.7B",
+            },
+        },
     },
     "stable_diffusion": {
         "sd-cpp": {
@@ -187,6 +228,10 @@ CAPABILITIES = {
             "supports": {
                 "image_generation": True,
                 "image_generation_b64": True,
+                "image_edits": True,
+                "image_variations": True,
+                "image_upscale": True,
+                "image_cfg_scale": True,
             },
             "test_models": {
                 "image": "SD-Turbo",
@@ -200,6 +245,22 @@ CAPABILITIES = {
             },
             "test_models": {
                 "image": "Anima-Turbo",
+            },
+        },
+        "gufo": {
+            "backends": ["rocm", "system"],
+            "supports": {
+                "image_generation": True,
+                "image_generation_b64": True,
+                "image_edits": True,
+                "image_variations": False,
+                "image_upscale": False,
+                # gufo's Qwen-Image serving exposes size/steps/seed/n only;
+                # guidance scale has no input.
+                "image_cfg_scale": False,
+            },
+            "test_models": {
+                "image": "Qwen-Image-2.1",
             },
         },
     },
@@ -276,6 +337,15 @@ CAPABILITIES = {
             "test_models": {
                 "tts": "OpenMOSS-TTS",
                 "tts_design": "MOSS-VoiceGen",
+            },
+        },
+        "gufo": {
+            "backends": ["rocm", "system"],
+            "supports": {
+                "tts": True,
+            },
+            "test_models": {
+                "tts": "Qwen3-TTS-1.7B-CustomVoice",
             },
         },
     },

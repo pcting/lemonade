@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -21,6 +22,16 @@ namespace lemon::backends {
         std::string repo;      // GitHub "org/repo"
         std::string filename;  // Release asset filename
         std::string version_override;  // If set, use this as the release tag instead of backend_versions.json value
+    };
+
+    // A backend whose engine cannot be installed through the managed flow (a
+    // system-managed binary the user supplies). Thrown instead of returning empty
+    // params, which the install endpoint reports as success: nothing was
+    // installed and nothing will be. The endpoint maps this to a client error
+    // carrying the message.
+    struct BackendNotInstallable : std::runtime_error {
+        explicit BackendNotInstallable(const std::string& message)
+            : std::runtime_error(message) {}
     };
 
     struct BackendSpec {

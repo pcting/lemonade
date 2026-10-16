@@ -1,0 +1,339 @@
+{
+  "_comment": [
+    "Mirror of what the gufo engine can load, per family and per tensor group.",
+    "Every group comes from exactly one accepted-types expression in one engine",
+    "call site; never blend two groups, because the engine's own sets are not",
+    "closed under union. Each group cites the file and line range it mirrors so",
+    "a reviewer diffs one group against one call site and a gufo bump forces a",
+    "re-diff. A tensor that matches no declared group of a known family is",
+    "accepted: the engine validates only the tensors it loads, and its load",
+    "error stays the backstop.",
+    "Mirrored against gufo v0.15.0 (89d6185) and re-diffed against v0.11.0",
+    "(e3c0d4c): every cited call site is byte-identical in the two, which is why",
+    "min_supported stays at 0.11.0 instead of moving with the pin. engine.pin is",
+    "the release the shipped image bundles; engine.min_supported is the oldest",
+    "release whose rules still match, and must equal kMinGufoVersion.",
+    "See docs/dev/backends-reference.md."
+  ],
+  "schema_version": 1,
+  "engine": {
+    "name": "gufo",
+    "pin": "v0.15.0",
+    "min_supported": "0.11.0"
+  },
+  "families": {
+    "qwen38-dense": {
+      "repos": ["unsloth/Qwen3.8-27B-GGUF"],
+      "block_divides_cols": false,
+      "variant_groups": ["projection", "recurrent_state", "normalization"],
+      "groups": [
+        {
+          "name": "unembedding",
+          "exact": ["output.weight"],
+          "types": ["F32", "BF16", "Q8_K", "Q8_0", "Q5_K", "Q6_K", "Q4_K", "Q3_K", "IQ4_NL", "IQ4_XS", "IQ3_S"],
+          "mirrors": "src/models/qwen/weights.cpp:78-87 accepted at :165-167 (TensorRole::kProjection)",
+          "why": "output.weight is validated as a projection, not as the embedding; the two sets differ only by Q8_K. Absent output.weight reuses token_embd (weights.cpp:154-157), and absence is never a refusal."
+        },
+        {
+          "name": "embedding",
+          "exact": ["token_embd.weight"],
+          "types": ["F32", "BF16", "Q8_0", "Q4_K", "Q3_K", "Q5_K", "Q6_K", "IQ4_NL", "IQ4_XS", "IQ3_S"],
+          "mirrors": "src/models/qwen/weights.cpp:62-72 accepted at :160-162 (TensorRole::kEmbedding)",
+          "why": "The production HIP embedding kernel has exact F32, BF16, and Q8_0 implementations. Treating every other type as Q8_0 would decode the wrong block layout."
+        },
+        {
+          "name": "normalization",
+          "patterns": [
+            "output_norm.weight",
+            "*.attn_norm.weight",
+            "*.input_norm.weight",
+            "*.ffn_norm.weight",
+            "*.post_attention_norm.weight",
+            "*.attn_post_norm.weight",
+            "*.attn_q_norm.weight",
+            "*.attn_k_norm.weight"
+          ],
+          "types": ["F32"],
+          "mirrors": "src/models/qwen/weights.cpp:73-77 accepted at :163, :263-266, :297-302 (TensorRole::kNorm)",
+          "why": "HIP norm, convolution, and recurrence kernels consume these tensors as float pointers. Accepting BF16 or packed data would reinterpret bytes."
+        },
+        {
+          "name": "recurrent_state",
+          "patterns": [
+            "*.ssm_a",
+            "*.ssm_a.weight",
+            "*.ssm_conv1d.weight",
+            "*.ssm_conv1d",
+            "*.ssm_dt.bias",
+            "*.ssm_dt.weight",
+            "*.ssm_dt",
+            "*.ssm_norm.weight"
+          ],
+          "types": ["F32"],
+          "mirrors": "src/models/qwen/weights.cpp:73-77 accepted at :315-322, :329-331 (TensorRole::kSsmParameter)",
+          "why": "Same F32-only rule as normalization, reached through a different role; Gated DeltaNet layers only (weights.cpp:215-244)."
+        },
+        {
+          "name": "projection",
+          "patterns": [
+            "*.attn_q.weight",
+            "*.attn_k.weight",
+            "*.attn_v.weight",
+            "*.attn_output.weight",
+            "*.attn_out.weight",
+            "*.wo.weight",
+            "*.wq.weight",
+            "*.wk.weight",
+            "*.wv.weight",
+            "*.attn_qkv.weight",
+            "*.wqkv.weight",
+            "*.attn_gate.weight",
+            "*.wqkv_gate.weight",
+            "*.ffn_gate.weight",
+            "*.ffn_up.weight",
+            "*.ffn_down.weight",
+            "*.ssm_alpha.weight",
+            "*.ssm_beta.weight",
+            "*.ssm_out.weight"
+          ],
+          "types": ["F32", "BF16", "Q8_K", "Q8_0", "Q5_K", "Q6_K", "Q4_K", "Q3_K", "IQ4_NL", "IQ4_XS", "IQ3_S"],
+          "mirrors": "src/models/qwen/weights.cpp:78-87 accepted at :267-275, :284-296, :309-314, :323-328, :332-334 (TensorRole::kProjection)",
+          "why": "The Unsloth UD-Q4_K_XL shard mixes Q5_K, IQ4_XS, Q4_K, Q6_K, IQ4_NL, Q3_K and IQ3_S across projections, and every one of them has an in-kernel decoder. Q4_0, Q4_1, Q5_0, Q5_1, Q8_1 and Q2_K are not in the engine's set."
+        }
+      ],
+      "notes": "The dense loader also rejects a quantized row that is not block aligned, via quant::QuantizedRowBytes(type, row_elements) == 0 (weights.cpp:124-135). That is a shape check against the architecture's own row count, which the family gate owns, so it is deliberately not mirrored here.",
+      "companions": {
+        "dflash": { "family": "qwen38-dflash2" }
+      }
+    },
+    "qwen38-flash-next": {
+      "repos": ["unsloth/Qwen3.8-Flash-Next-GGUF"],
+      "block_divides_cols": true,
+      "variant_groups": ["dense", "scalar_f32", "ple_table"],
+      "groups": [
+        {
+          "name": "top_level_matrix",
+          "exact": ["token_embd.weight", "output.weight"],
+          "types": ["Q8_0", "Q6_K", "BF16", "F16", "F32"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:251-252 accepted at :263-266",
+          "why": "Bind() declares its own dense set and it accepts Q6_K, which Layer()'s dense (:141-142) refuses; the two are separate expressions and must stay separate groups. output.weight is optional and falls back to token_embd (:266-269)."
+        },
+        {
+          "name": "mixer_norm",
+          "patterns": [
+            "output_hc_norm.weight",
+            "*.hc_head_norm.weight",
+            "*.hc_attn_norm.weight",
+            "*.hc_ffn_norm.weight"
+          ],
+          "types": ["F32"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:120 accepted at :146-147, :225, :270",
+          "why": "One Mixer() call site serves blk.*.hc_attn, blk.*.hc_ffn, output_hc and nextn.hc_head; all four read their norm as F32."
+        },
+        {
+          "name": "mixer_inject",
+          "patterns": ["*.hc_attn_inject.weight", "*.hc_ffn_inject.weight"],
+          "types": ["F32", "Q8_0", "BF16"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:127-129",
+          "why": "The inject projection drops F16, which its own *_down and *_up accept. Mixer() emits inject only for the with_inject call sites (:146-147); output_hc (:270) and nextn.hc_head (:225) pass with_inject=false, so an inject tensor in those groups is never read and stays unmatched."
+        },
+        {
+          "name": "mixer_lowrank",
+          "patterns": [
+            "output_hc_down.weight",
+            "output_hc_up.weight",
+            "*.hc_head_down.weight",
+            "*.hc_head_up.weight",
+            "*.hc_attn_down.weight",
+            "*.hc_attn_up.weight",
+            "*.hc_ffn_down.weight",
+            "*.hc_ffn_up.weight"
+          ],
+          "types": ["Q8_0", "BF16", "F16", "F32"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:121-126",
+          "why": "This is the group that refuses the MTP draft published as Q4_K: blk.48.hc_attn_down.weight Q4_K fails here, which is the combination gufo-engine-twins recorded as finding D9.6."
+        },
+        {
+          "name": "recurrent_gate",
+          "patterns": ["*.ssm_alpha.weight", "*.ssm_beta.weight"],
+          "types": ["F32", "BF16", "Q8_0"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:156-159",
+          "why": "Wider than the other recurrent scalars, which are F32 only; do not fold it into scalar_f32."
+        },
+        {
+          "name": "router",
+          "patterns": ["*.ffn_gate_inp.weight"],
+          "types": ["F32"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:201-202"
+        },
+        {
+          "name": "shared_expert_router",
+          "patterns": ["*.ffn_gate_inp_shexp.weight"],
+          "types": ["F32"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:209-210",
+          "why": "The shared-expert router is F32 while the shared-expert matrices it feeds are dense; a glob over ffn_*_shexp.weight would wrongly give this tensor the dense set."
+        },
+        {
+          "name": "experts",
+          "patterns": ["*.ffn_gate_exps.weight", "*.ffn_up_exps.weight", "*.ffn_down_exps.weight"],
+          "types": ["Q4_K", "Q5_K", "Q6_K", "Q5_1", "Q8_0"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:143-144 accepted at :203-208",
+          "why": "The one group where a K-quant is required rather than permitted: BF16, F16 and F32 are refused. A manifest that narrowed rules globally would break the checkpoints that load today."
+        },
+        {
+          "name": "scalar_f32",
+          "patterns": [
+            "*.ssm_conv1d.weight",
+            "*.ssm_dt.bias",
+            "*.ssm_a",
+            "*.ssm_norm.weight",
+            "*.attn_q_norm.weight",
+            "*.attn_k_norm.weight",
+            "*.indexer.q_norm.weight",
+            "*.indexer.k_norm.weight",
+            "*.ple_norm_key.weight",
+            "*.ple_norm_query.weight",
+            "*.ple_norm_conv.weight",
+            "*.ple_conv1d.weight",
+            "*.nextn.enorm.weight",
+            "*.nextn.hnorm.weight"
+          ],
+          "types": ["F32"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:162 accepted at :154-155, :160-161, :163-164, :173-176, :181-184, :191-198, :220-222",
+          "why": "Every site spells the expression {GgmlType::kF32}; :162 is cited as the instance and the others are the same expression applied to the names above. ssm_alpha and ssm_beta (:156-159) sit between these lines and are deliberately absent — they take the wider set recorded in recurrent_gate."
+        },
+        {
+          "name": "ple_table",
+          "exact": ["per_layer_token_embd.weight"],
+          "types": ["IQ4_NL", "BF16"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:281-282",
+          "why": "The family's only IQ4_NL tensor, and the only place the engine accepts it. Bound only when the config declares a ple layer (:271), so absence is normal."
+        },
+        {
+          "name": "dense",
+          "patterns": [
+            "*.attn_q.weight",
+            "*.attn_k.weight",
+            "*.attn_v.weight",
+            "*.attn_output.weight",
+            "*.attn_qkv.weight",
+            "*.attn_gate.weight",
+            "*.ssm_out.weight",
+            "*.indexer.q_proj.weight",
+            "*.indexer.k_proj.weight",
+            "*.ple_key.weight",
+            "*.ple_value.weight",
+            "*.ffn_gate_shexp.weight",
+            "*.ffn_up_shexp.weight",
+            "*.ffn_down_shexp.weight",
+            "*.nextn.eh_proj.weight"
+          ],
+          "types": ["Q8_0", "BF16", "F16", "F32"],
+          "mirrors": "src/models/qwen38_flash_next/weights.cpp:141-142 accepted at :150-153, :165, :167-172, :177-180, :189-190, :211-216, :224",
+          "why": "One dense expression reused across Layer(); every name here is that same set, so this is one group, not a blend. attn_* and ssm_*/indexer.* names are mutually exclusive per layer (the linear flag, :149 vs :166), which is why both appear."
+        }
+      ],
+      "notes": "block_divides_cols mirrors Binder::Get (:83-88): a format whose block size does not divide the tensor's first dimension is refused, and core formats outside FormatOf (:19-41) have block 0 and fail the same check. Every type declared above is inside FormatOf.",
+      "companions": {
+        "mtp": { "extends": "self" }
+      }
+    },
+    "qwen38-dflash2": {
+      "_comment": "Companion family, reached through qwen38-dense's dflash label and through the draft's own repository. The DFlash2 file is not a partial checkpoint of its host: it is a separate tensor namespace with its own, narrower sets, so it cannot reuse qwen38-dense's groups.",
+      "repos": ["z-lab/Qwen3.8-27B-DFlash2-GGUF"],
+      "block_divides_cols": false,
+      "variant_groups": [],
+      "groups": [
+        {
+          "name": "vector",
+          "patterns": [
+            "output_norm.weight",
+            "enc.output_norm.weight",
+            "fc.scale",
+            "*.attn_norm.weight",
+            "*.ffn_norm.weight",
+            "*.attn_q_norm.weight",
+            "*.attn_k_norm.weight",
+            "*.attn_conv_base",
+            "*.ffn_conv_base"
+          ],
+          "types": ["F32", "BF16"],
+          "mirrors": "src/models/qwen/dflash_weights.cpp:52-54 accepted at :344-347, :350-357, :366-367, :378-385, :395-397, :401-403 (matrix=false)",
+          "why": "fc.scale is judged here too: the engine requires it absent or a unit F32/BF16 scalar, and the scalar half of that is a format rule."
+        },
+        {
+          "name": "matrix",
+          "patterns": [
+            "selector_predecessor.weight",
+            "selector_successor.weight",
+            "selector_hidden.weight",
+            "fc.weight",
+            "*.attn_q.weight",
+            "*.attn_k.weight",
+            "*.attn_v.weight",
+            "*.attn_output.weight",
+            "*.ffn_gate.weight",
+            "*.ffn_up.weight",
+            "*.ffn_down.weight",
+            "*.attn_conv_proj.weight",
+            "*.ffn_conv_proj.weight"
+          ],
+          "types": ["F32", "BF16", "Q8_0", "Q4_K", "Q6_K"],
+          "mirrors": "src/models/qwen/dflash_weights.cpp:46-50 accepted at :317-322, :332-343, :368-377, :386-406 (matrix=true)",
+          "why": "Narrower than the host family's projection set: no Q3_K, Q5_K, Q8_K, IQ4_NL, IQ4_XS or IQ3_S. Judging this draft under the host's rules would offer a companion the engine refuses."
+        }
+      ],
+      "notes": "The engine also refuses any DFlash-2 file that declares a d2t tensor (dflash_weights.cpp:301-305) regardless of its type. That is a feature gap, not a format rule, so it is not mirrored here."
+    },
+    "deepseek-v4-flash": {
+      "repos": ["antirez/deepseek-v4-gguf"],
+      "block_divides_cols": false,
+      "variant_groups": [],
+      "groups": [],
+      "notes": "The DS4 runtime has decoders for a flat set of storage types (runtime/tensor_types.h: F32, F16, Q8_0, Q2_K, Q4_K, IQ2_XXS, I32) and validates no per-tensor-group format rule. Declaring no groups keeps the gate permissive for this family: it is the honest mirror, and inventing groups would be a guess. Re-check on every engine bump.",
+      "companions": {
+        "dspark": { "extends": "self" }
+      }
+    }
+  },
+  "pairings": [
+    {
+      "main": "unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL",
+      "draft": "z-lab/Qwen3.8-27B-DFlash2-GGUF:Qwen3.8-27B-DFlash2-Q4_K_M.gguf",
+      "evidence": "inventory-measured",
+      "verified": "2026-10-14",
+      "artifacts": {
+        "unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+        "z-lab/Qwen3.8-27B-DFlash2-GGUF:Qwen3.8-27B-DFlash2-Q4_K_M.gguf": "Qwen3.8-27B-DFlash2-Q4_K_M.gguf"
+      },
+      "note": "The catalog row's own main and draft, verbatim. Read from the hub cache on the dev host: the main declares 866 tensors, 862 claimed by qwen38-dense groups with none refused, and the four unmatched are blk.64.nextn.*, which the dense loader never binds because the MTP head rides inside a file it reads only as a host. All 81 of the draft's tensors are claimed by qwen38-dflash2. No gufo process loaded either file on that host, so the tier stops at inventory-measured."
+    },
+    {
+      "main": "unsloth/Qwen3.8-27B-GGUF:UD-Q8_K_XL",
+      "evidence": "engine-loaded",
+      "verified": "2026-10-14",
+      "artifacts": {
+        "unsloth/Qwen3.8-27B-GGUF:UD-Q8_K_XL": "Qwen3.8-27B-UD-Q8_K_XL.gguf"
+      },
+      "note": "Seeded main with no draft. Read from the hub cache on the Strix Halo box first: 866 tensors, 862 claimed by qwen38-dense groups with none refused, and the four unmatched are the same blk.64.nextn.* the sibling quant carries. Then loaded, which is what this tier records: gufo 0.15.0 (89d6185), the release engine.pin mirrors, opened the whole 31 GB file through the deployed container and reported event=load_completed kind=text elapsed_ms=15908 context_tokens=262144 speculative=off rss_mib=30295 gpu_device_used_mib=35142 (the engine's own line, stamped in UTC), then answered a request — Inference completed tokens=67 (in=59, out=8), ttft=0.38s, tps=7.11. The same artifact was loaded earlier by 0.11.0 (e3c0d4c), the release the pin held before this bump; that observation stands as history, and the release quoted here is the one that ships. That load is also the test of the permissive rule this row leans on: the four blk.64.nextn.* tensors no group claims were tolerated by the gate, and the engine did not refuse them either, so tolerating them was the right call rather than an uncovered risk. speculation=off is expected here, the row having no draft."
+    },
+    {
+      "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL",
+      "draft": "unsloth/Qwen3.8-Flash-Next-GGUF:MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+      "evidence": "engine-loaded",
+      "verified": "2026-10-14",
+      "artifacts": {
+        "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL": "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+        "unsloth/Qwen3.8-Flash-Next-GGUF:MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf": "MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf"
+      },
+      "note": "The strongest row here, and the family whose rules came from weights.cpp rather than from a file. gufo 0.15.0 (89d6185), the release engine.pin now mirrors, loaded both files through the deployed container — event=load_completed kind=text elapsed_ms=80019 context_tokens=262144 speculative=mtp draft_limit=7 disk_cache=off gpu_device_used_mib=90605 — and a request answered at 38.2 tok/s: the loader reports speculative=mtp draft_limit=7, so this is a pair the engine runs together rather than two files that each open. The earlier observation on 0.11.0 (e3c0d4c), the pin this bump moved away from, drafted at about 70% acceptance and remains true as history. The engine's own load line names the main as the first of four shards, and that is the artifact recorded; the shard declares no tensors, so an inventory read follows it to the shard that does. Every tensor of all 1,224 across the four shards falls inside the group that claims it, the mixer tensors among them Q8_0 and F32 as the source says: each shard that declares tensors was put through the drift judge in turn (297, 752 and 175), and the first, which declares none, is the one the loader opens and reads through. The refusal this row exists for is measured as well, on the mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf that shares the snapshot: 16 tensors refused, starting with token_embd.weight as Q4_K against top_level_matrix. The engine load happened in a container built before this gate existed, so it evidences the pair, not the gate's own path."
+    },
+    {
+      "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+      "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-DSpark-support-0731.gguf",
+      "evidence": "catalog-declared",
+      "verified": "2026-10-14",
+      "note": "Neither file is cached on any host this change was built on, so nothing was read. The verdict for this pair is accept-by-absence either way: deepseek-v4-flash declares no groups, because its loader checks one flat decoder set rather than per-tensor rules. The record exists so the two strings cannot drift into a typo unnoticed."
+    }
+  ]
+}

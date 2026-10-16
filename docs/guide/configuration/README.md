@@ -60,12 +60,17 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "args": ""
   },
   "enable_dgpu_gtt": false,
+  "engine_twins": true,
   "extra_models_dir": "",
   "flm": {
     "args": "",
     "prefer_system": false
   },
   "global_timeout": 600,
+  "gufo": {
+    "args": "",
+    "backend": "auto"
+  },
   "host": "localhost",
   "hrx": {
     "args": "",
@@ -222,6 +227,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `inhibit_suspend` | bool | true | Prevent the OS from suspending while inference is active. Linux only (uses systemd-logind); no-op on Windows/macOS/non-systemd environments. |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
+| `engine_twins` | bool | true | Expose locally registered or already-downloaded checkpoints that an engine's catalog can serve as additional entries on that engine (for example a llama.cpp model gains a `-Gufo` twin). Set to `false` to list only explicitly registered and discovered models. See [Gufo backend](../../dev/backends-reference.md#gufo-gufo). |
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 | `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |
 

@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <thread>
 #include <atomic>
+#include <optional>
 #include <stdexcept>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
@@ -30,6 +31,21 @@ class BackendStreamRetryableReset : public std::runtime_error {
 public:
     explicit BackendStreamRetryableReset(const std::string& reason)
         : std::runtime_error(reason) {}
+};
+
+// Thrown when a server never became ready. The child's exit status is carried
+// when it exited before that, so a backend can name the specific cause (gufo
+// exits 75 on a lost GPU context) instead of reporting every failed start the
+// same way. Unset when the child was still running, or the load was cancelled.
+class ServerStartFailure : public std::runtime_error {
+public:
+    ServerStartFailure(const std::string& message, std::optional<int> exit_code)
+        : std::runtime_error(message), exit_code_(exit_code) {}
+
+    std::optional<int> exit_code() const { return exit_code_; }
+
+private:
+    std::optional<int> exit_code_;
 };
 
 
@@ -597,8 +613,14 @@ protected:
     // the load is cancelled or `timeout_seconds` passes first.
     void start_server(std::unique_ptr<ServerProcess> process, const ServerCommand& command,
                       long timeout_seconds = 600);
-    // Stops the watchdog and the server. Safe to call when nothing is running.
-    void stop_server();
+    // Stops the watchdog and the server, returning the exit status when the
+    // child had already exited and was reaped here. Safe when nothing is running.
+    std::optional<int> stop_server();
+    // Exit status of the last child reaped by stop_server() or by a watchdog
+    // reset, so a backend can name a failure after the process object is gone.
+    // Unset when that child was terminated while still running.
+    std::optional<int> last_stopped_exit_code() const;
+    void record_stopped_exit_code(std::optional<int> exit_code);
 
     bool load_cancelled() const { return load_cancel_ && load_cancel_->load(); }
 
@@ -635,6 +657,10 @@ protected:
     std::string host_ = "127.0.0.1";
     std::unique_ptr<ServerProcess> process_;
     mutable std::mutex process_mutex_;
+    // Exit status of the last child that was reaped here, so a backend can still
+    // name a failure after the process object is gone. Unset when the child was
+    // terminated while running, or nothing has been stopped yet.
+    std::optional<int> last_stopped_exit_code_;
     Telemetry telemetry_;
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager

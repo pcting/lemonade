@@ -347,6 +347,25 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_000b_install_of_a_system_managed_engine_is_a_client_error(self):
+        """Installing gufo is refused with remediation, not reported as a server error."""
+        response = requests.post(
+            f"{self.base_url}/install",
+            json={"recipe": "gufo", "backend": "rocm"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        # The engine is system-managed: Lemonade cannot download it, so the
+        # request is the caller's to fix. A 5xx here means the endpoint treated
+        # it as its own fault, and a 200 means it claimed an install happened.
+        self.assertEqual(response.status_code, 400, response.text)
+        body = response.json()
+        error = body.get("error")
+        message = error.get("message") if isinstance(error, dict) else str(error)
+        self.assertIsInstance(message, str)
+        self.assertIn("gufo", message.lower())
+        self.assertNotIn("action", body, "an install must not be reported as available")
+        print("[OK] /install for a system-managed engine returns a client error")
+
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
         response = requests.get(

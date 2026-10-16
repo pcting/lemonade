@@ -1,5 +1,6 @@
 #include <lemon/model_manager.h>
 #include <lemon/runtime_config.h>
+#include <lemon/engine_twins.h>
 #include <lemon/hf_variants.h>
 #include <lemon/model_registry.h>
 #include <lemon/routing_policy_parser.h>
@@ -3896,6 +3897,36 @@ void ModelManager::build_cache() {
                 << "Model '" << name << "' (recipe " << info.recipe
                 << ") has no deployment label; add one (chat, transcription, embeddings, ...)"
                 << std::endl;
+        }
+    }
+
+    // Engine twins: mirror servable checkpoints onto engines whose ops advertise
+    // them (gufo), so a model registered or downloaded for another engine is
+    // also selectable there without re-registration or a second download.
+    // Additive; the switch keeps generated entries out of explicit deployments.
+    if (const auto* cfg = RuntimeConfig::global(); !cfg || cfg->engine_twins_enabled()) {
+        for (const auto* desc : backends::all_descriptors()) {
+            const auto repos = backends::ops_for(desc->recipe)
+                                   ->servable_checkpoint_repositories(all_models);
+            if (repos.empty()) continue;
+            const auto added = engine_twins::add_twins(
+                all_models, desc->recipe, repos,
+                [&desc](const ModelInfo& info, const engine_twins::ServableRepo& repo) {
+                    return backends::ops_for(desc->recipe)->serves_model_checkpoint(info, repo);
+                });
+            for (const auto& id : added) {
+                // Twins mirror the source's checkpoints; resolve them now so the
+                // download-status pass below sees the same cache state the
+                // source entry sees.
+                auto twin = all_models.find(id);
+                if (twin != all_models.end()) {
+                    resolve_all_model_paths(twin->second);
+                }
+            }
+            if (!added.empty()) {
+                LOG(INFO, "ModelManager") << "Engine twins (" << desc->recipe << "): "
+                                          << added.size() << " generated" << std::endl;
+            }
         }
     }
 

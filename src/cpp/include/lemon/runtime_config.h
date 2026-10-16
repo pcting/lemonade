@@ -51,6 +51,8 @@ public:
     bool auto_evict() const;
     double auto_evict_threshold_pct() const;
     bool inhibit_suspend() const;
+    // Generated engine-twin entries (see lemon/engine_twins.h); default true.
+    bool engine_twins_enabled() const;
 
     // Telemetry settings
     bool telemetry_enabled() const;

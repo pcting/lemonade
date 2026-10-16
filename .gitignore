@@ -186,6 +186,9 @@ CLAUDE.local.md
 .cursor/
 .cursor**
 
+# Playwright MCP scratch output (browser console logs, page snapshots)
+.playwright-mcp/
+
 # WiX Toolset build artifacts
 *.msi
 *.wixpdb

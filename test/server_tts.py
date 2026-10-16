@@ -1,16 +1,18 @@
 """
-Kokoro TTS tests for Lemonade Server.
+TTS tests for Lemonade Server.
 
 Tests the /audio/speech endpoint.
 
 Usage:
-    python server_tts.py
+    python server_tts.py                                  # Kokoro defaults
+    python server_tts.py --wrapped-server gufo            # Gufo TTS (gfx1151)
     python server_tts.py --cli-binary /path/to/lemonade
 """
 
 import base64
 import requests
 
+from utils.capabilities import get_current_config, get_test_model
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
@@ -23,18 +25,35 @@ from utils.test_models import (
 )
 
 
+def _is_kokoro() -> bool:
+    wrapped, _, _ = get_current_config()
+    return wrapped in (None, "", "kokoro")
+
+
+def _tts_model() -> str:
+    if _is_kokoro():
+        return TTS_MODEL
+    return get_test_model("tts")
+
+
 class TextToSpeechTests(ServerTestBase):
     """Tests for Text to Speech."""
 
     def test_001_basic_tts(self):
-        """Test basic speech generation with Kokoro."""
+        """Test basic speech generation."""
+        model = _tts_model()
+        # Gufo's TTS serving emits buffered wav only; kokoro defaults to mp3.
+        fmt = "mp3" if _is_kokoro() else "wav"
         payload = {
-            "model": TTS_MODEL,
+            "model": model,
             "input": "Lemonade can speak",
-            "response_format": "mp3",
+            "response_format": fmt,
         }
+        if not _is_kokoro():
+            # gufo CustomVoice requires an explicit speaker from its voice list.
+            payload["voice"] = "ryan"
 
-        print(f"[INFO] Sending speech generation request with model {TTS_MODEL}")
+        print(f"[INFO] Sending speech generation request with model {model}")
 
         response = requests.post(
             f"{self.base_url}/audio/speech",
@@ -48,20 +67,28 @@ class TextToSpeechTests(ServerTestBase):
             f"Speech generation failed with status {response.status_code}: {response.text}",
         )
 
-        # MP3 files start with specific magic bytes
-        self.assertTrue(
-            response.content[:3] == b"ID3",
-            "Decoded data should be a valid MP3",
-        )
+        if fmt == "mp3":
+            # MP3 files start with specific magic bytes
+            self.assertTrue(
+                response.content[:3] == b"ID3",
+                "Decoded data should be a valid MP3",
+            )
+        else:
+            self.assertTrue(
+                response.content[:4] == b"RIFF",
+                "Speech audio should be a valid WAV (RIFF header)",
+            )
 
         print(f"[OK] Speech generation successful")
 
     def test_002_missing_input_error(self):
         """Test error handling when input is missing."""
         payload = {
-            "model": TTS_MODEL,
+            "model": _tts_model(),
             # No prompt
         }
+        if not _is_kokoro():
+            payload["voice"] = "ryan"
 
         response = requests.post(
             f"{self.base_url}/audio/speech",
@@ -101,8 +128,10 @@ class TextToSpeechTests(ServerTestBase):
 
     def test_004_tts_voice(self):
         """Test voice selection with Kokoro."""
+        if not _is_kokoro():
+            self.skipTest("kokoro voice names do not apply to other TTS backends")
         payload = {
-            "model": TTS_MODEL,
+            "model": _tts_model(),
             "input": "Lemonade can speak",
             "voice": "onyx",
             "response_format": "opus",
@@ -132,8 +161,10 @@ class TextToSpeechTests(ServerTestBase):
 
     def test_005_tts_stream(self):
         """Test streaming speech generation with Kokoro."""
+        if not _is_kokoro():
+            self.skipTest("kokoro raw-PCM streaming path is kokoro-specific")
         payload = {
-            "model": TTS_MODEL,
+            "model": _tts_model(),
             "input": "Lemonade can speak",
             "voice": "onyx",
             "stream_format": "audio",
@@ -174,9 +205,11 @@ class TextToSpeechTests(ServerTestBase):
         print(f"[OK] Speech generation successful")
 
     def test_006_tts_speed(self):
-        """Test voice selection with Kokoro."""
+        """Test speed control with Kokoro."""
+        if not _is_kokoro():
+            self.skipTest("gufo TTS supports speed 1.0 only")
         payload = {
-            "model": TTS_MODEL,
+            "model": _tts_model(),
             "input": "Lemonade can speak",
             "speed": 0.75,
             "response_format": "wav",
@@ -206,8 +239,10 @@ class TextToSpeechTests(ServerTestBase):
 
     def test_007_tts_stream_rejects_unstreamable_format(self):
         """A format the backend can only emit buffered must not be streamed."""
+        if not _is_kokoro():
+            self.skipTest("kokoro stream-format rejection is kokoro-specific")
         payload = {
-            "model": TTS_MODEL,
+            "model": _tts_model(),
             "input": "Lemonade can speak",
             "stream_format": "audio",
             "response_format": "mp3",
@@ -236,4 +271,4 @@ class TextToSpeechTests(ServerTestBase):
 
 
 if __name__ == "__main__":
-    run_server_tests(TextToSpeechTests, "TTS TESTS")
+    run_server_tests(TextToSpeechTests, "TTS TESTS", modality="tts")

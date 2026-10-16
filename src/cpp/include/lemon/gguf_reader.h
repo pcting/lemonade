@@ -14,6 +14,7 @@
 #include <fstream>
 #include <ios>
 #include <string>
+#include <utility>
 #include <vector>
 #include <lemon/gguf_capabilities.h>
 #include <lemon/utils/path_utils.h>
@@ -476,6 +477,147 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
          * 2.0  // F16
          * 2.0  // K+V
          * factor;
+}
+
+// ── Tensor storage-type inventory ─────────────────────────────────────
+
+/// GGML storage types the gufo engine can name: the ids a GGUF tensor-info
+/// section stores, next to the strings gufo's `core::ToString()` prints for
+/// them — including its "UNKNOWN" for anything the engine cannot name, so a
+/// reason we log never claims a label the engine could not have produced.  gufo
+/// casts the stored id straight to its `core::GgmlType` with no remapping
+/// (`gguf_reader.cpp:727`), so these ids are the ones a manifest names.
+struct GgmlTypeName {
+    uint32_t id;
+    const char* name;
+};
+
+inline constexpr GgmlTypeName kGgmlTypeNames[] = {
+    {0, "F32"},   {1, "F16"},   {2, "Q4_0"},   {3, "Q4_1"},    {6, "Q5_0"},
+    {7, "Q5_1"},  {8, "Q8_0"},  {9, "Q8_1"},   {10, "Q2_K"},   {11, "Q3_K"},
+    {12, "Q4_K"}, {13, "Q5_K"}, {14, "Q6_K"},  {15, "Q8_K"},   {16, "IQ2_XXS"},
+    {20, "IQ4_NL"}, {21, "IQ3_S"}, {23, "IQ4_XS"}, {26, "I32"}, {30, "BF16"},
+};
+
+inline const char* ggml_type_name(uint32_t id) {
+    for (const auto& entry : kGgmlTypeNames) {
+        if (entry.id == id) return entry.name;
+    }
+    return "UNKNOWN";
+}
+
+/// False for a name no gufo release prints, which turns a manifest that drifts
+/// from the engine into a load error rather than a rule that never matches.
+inline bool ggml_type_id(const std::string& name, uint32_t& out_id) {
+    for (const auto& entry : kGgmlTypeNames) {
+        if (name == entry.name) {
+            out_id = entry.id;
+            return true;
+        }
+    }
+    return false;
+}
+
+/// One tensor exactly as the file's tensor-info section declares it.  `dimensions`
+/// keeps the file's order, where [0] is the contiguous dimension — the value a
+/// quantization block size has to divide.
+struct GgufTensorInfo {
+    std::string name;
+    std::vector<uint64_t> dimensions;
+    uint32_t type = 0;
+};
+
+/// Tensors declared by a GGUF file, plus split metadata.  The tensor list carries
+/// duplicates by design: a caller deciding whether a file is readable has to see
+/// what every tensor uses, not what any tensor uses.  The split fields let
+/// callers follow unsloth-style layouts whose first shard is a metadata-only stub
+/// (0 tensors) by reading the next shard.
+struct GgufTensorTypes {
+    std::vector<GgufTensorInfo> tensors;
+    uint64_t tensor_count = 0;
+    int32_t split_no = 0;
+    int32_t split_count = 1;
+};
+
+/// Read the tensor list (name/dims/type/offset per tensor), skipping the KV
+/// header and the tensor data itself.
+inline bool read_gguf_tensor_types(GgufTensorTypes& out, const std::string& path) {
+    std::ifstream in(lemon::utils::path_from_utf8(path), std::ios::binary);
+    if (!in) return false;
+
+    char magic[4] = {};
+    in.read(magic, sizeof(magic));
+    if (!in || std::memcmp(magic, "GGUF", 4) != 0) return false;
+
+    uint32_t version = 0;
+    uint64_t tensor_count = 0;
+    uint64_t kv_count = 0;
+    if (!read_gguf_le(in, version) || !read_gguf_le(in, tensor_count) ||
+        !read_gguf_le(in, kv_count)) {
+        return false;
+    }
+    (void)version;
+
+    const auto integer_scalar = [](uint32_t t) {
+        return (t <= 5) || t == 10 || t == 11;
+    };
+
+    for (uint64_t i = 0; i < kv_count; ++i) {
+        std::string key;
+        uint32_t type = 0;
+        if (!read_gguf_string(in, key) || !read_gguf_le(in, type)) return false;
+
+        if ((key == "split.no" || key == "split.count") && integer_scalar(type)) {
+            int64_t value = 0;
+            if (!read_gguf_integer_value(in, type, value)) return false;
+            if (key == "split.no") {
+                out.split_no = static_cast<int32_t>(value);
+            } else {
+                out.split_count = static_cast<int32_t>(value);
+            }
+            continue;
+        }
+        if (!skip_gguf_value(in, type)) return false;
+    }
+
+    // A declaration is only believable if the bytes behind it could describe that
+    // many entries: each needs a name length, a dimension count, a type and an
+    // offset at minimum. A file claiming more than its remaining bytes can hold is
+    // reported unreadable — the same answer a short read gets — so an impossible
+    // count never reaches an allocation.
+    const std::streampos here = in.tellg();
+    in.seekg(0, std::ios::end);
+    const std::streampos end = in.tellg();
+    if (here < 0 || end < 0 || end < here) return false;
+    in.seekg(here);
+    constexpr uint64_t kMinTensorEntryBytes = 20;
+    if (tensor_count > static_cast<uint64_t>(end - here) / kMinTensorEntryBytes) {
+        return false;
+    }
+
+    // Bounded even when the declaration survives the check above: the count comes
+    // from the file, and letting the vector grow is a much smaller failure than
+    // reserving whatever it claimed.
+    out.tensors.reserve(static_cast<std::size_t>(std::min<uint64_t>(tensor_count, 65536)));
+    for (uint64_t i = 0; i < tensor_count; ++i) {
+        GgufTensorInfo tensor;
+        uint32_t n_dims = 0;
+        if (!read_gguf_string(in, tensor.name) || !read_gguf_le(in, n_dims)) return false;
+        if (n_dims > 8) return false;
+        tensor.dimensions.reserve(n_dims);
+        for (uint32_t d = 0; d < n_dims; ++d) {
+            uint64_t dim = 0;
+            if (!read_gguf_le(in, dim)) return false;
+            tensor.dimensions.push_back(dim);
+        }
+        if (!read_gguf_le(in, tensor.type)) return false;
+        uint64_t offset = 0;
+        if (!read_gguf_le(in, offset)) return false;
+        out.tensors.push_back(std::move(tensor));
+    }
+
+    out.tensor_count = tensor_count;
+    return true;
 }
 
 } // namespace lemon

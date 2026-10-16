@@ -138,6 +138,8 @@ python test/test_schema_lock.py
 
 Every PR runs the C++ `cpp-ci` tests, the endpoint/CLI suites on Windows and Linux, routing schema checks, app typecheck and regression tests, and the docs drift and link checks. Inference suites run on self-hosted AMD hardware runners ([details](./self-hosted-runners.md)); [What defers to the merge queue](#what-defers-to-the-merge-queue) covers when they run.
 
+- **gufo runner provisioning**: the gufo backend is system-managed — Lemonade cannot download it, so there is no managed install to warm a runner. The Strix Halo (`gfx1151`) Linux runner image must bake in a pinned `gufo` build available on `PATH` (or set `LEMONADE_GUFO_SERVER_BIN` for the runner). gufo needs the stock AMD ROCm 7.2 runtime, not TheRock. When the binary is absent, the gufo suites skip with a clear "gufo is not provisioned" message (enforced by `ServerTestBase`) rather than failing.
+
 - Relevant local tests should pass before requesting review. All required CI must be green before final approval and merge.
 - Claiming a failure is a pre-existing flake requires evidence: link a `main` run with the identical failure signature. Fix flaky tests at the root cause; don't widen thresholds or add retries.
 - The PR description states how the change was tested and which platforms you could not cover. Ask in the [Discord](https://discord.gg/5xXzkMu8Zk) for help testing on hardware you don't have.

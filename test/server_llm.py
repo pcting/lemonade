@@ -90,6 +90,20 @@ class LLMTests(ServerTestBase):
             models += [MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY]
         return list(dict.fromkeys(models))
 
+    def no_reasoning(self):
+        """Backends whose test model thinks by default (e.g. gufo Qwen3.8)
+        spend the suite's tight token budgets on reasoning, leaving content
+        empty. Ask for direct answers where the knob exists."""
+        if supports("reasoning_by_default"):
+            return {"extra_body": {"reasoning_effort": "none"}}
+        return {}
+
+    def no_reasoning_responses(self):
+        """Responses-API counterpart of no_reasoning (reasoning.effort shape)."""
+        if supports("reasoning_by_default"):
+            return {"extra_body": {"reasoning": {"effort": "none"}}}
+        return {}
+
     @skip_if_unsupported("static_max_context_window")
     def test_000_model_info_includes_max_context_window(self):
         """Downloaded GGUF and installed FLM text models expose static context metadata."""
@@ -143,6 +157,7 @@ class LLMTests(ServerTestBase):
             messages=self.messages,
             max_completion_tokens=10,
             stream=False,
+            **self.no_reasoning(),
         )
 
         print(f"Response: {completion.choices[0].message.content}")
@@ -185,19 +200,22 @@ class LLMTests(ServerTestBase):
             # Release all workers at approximately the same time.
             barrier.wait(timeout=TIMEOUT_DEFAULT)
 
+            body = {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Reply briefly to request {index}.",
+                    }
+                ],
+                "max_tokens": 8,
+                "stream": False,
+            }
+            body.update(self.no_reasoning().get("extra_body", {}))
+
             response = requests.post(
                 f"{self.base_url}/chat/completions",
-                json={
-                    "model": model,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": f"Reply briefly to request {index}.",
-                        }
-                    ],
-                    "max_tokens": 8,
-                    "stream": False,
-                },
+                json=body,
                 headers=headers,
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
@@ -249,6 +267,7 @@ class LLMTests(ServerTestBase):
             messages=self.messages,
             stream=True,
             max_completion_tokens=10,
+            **self.no_reasoning(),
         )
 
         complete_response = ""
@@ -282,6 +301,7 @@ class LLMTests(ServerTestBase):
                 messages=self.messages,
                 stream=True,
                 max_completion_tokens=10,
+                **self.no_reasoning(),
             )
 
             complete_response = ""
@@ -397,15 +417,18 @@ class LLMTests(ServerTestBase):
             stream=False,
             temperature=0.0,
             max_output_tokens=10,
+            **self.no_reasoning_responses(),
         )
 
         print(f"Response: {response.output[0].content[0].text}")
         self.assertGreater(len(response.output[0].content[0].text), 0)
 
         # Non-streaming Responses requests record telemetry like chat does.
+        # prompt_tokens is the full prompt count; input_tokens would be the
+        # backend's processed count (0 on a full prefix-cache hit is valid).
         stats = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT).json()
         self.assertGreater(
-            stats.get("input_tokens", 0),
+            stats.get("prompt_tokens", 0),
             0,
             f"responses request did not record telemetry: {stats}",
         )
@@ -424,6 +447,7 @@ class LLMTests(ServerTestBase):
             stream=True,
             temperature=0.0,
             max_output_tokens=10,
+            **self.no_reasoning_responses(),
         )
 
         complete_response = ""
@@ -440,7 +464,10 @@ class LLMTests(ServerTestBase):
             elif event.type == "response.output_text.delta":
                 complete_response += event.delta
                 print(event.delta, end="")
-            elif event.type == "response.completed":
+            elif event.type in ("response.completed", "response.incomplete"):
+                # A request truncated by max_output_tokens ends with
+                # response.incomplete instead of response.completed; both carry
+                # the final response object and are spec-valid terminal events.
                 self.assertEqual(
                     event.response.output[0].content[0].text,
                     complete_response,
@@ -451,7 +478,11 @@ class LLMTests(ServerTestBase):
             last_event_type = event.type
 
         print()
-        self.assertEqual(last_event_type, "response.completed")
+        self.assertIn(
+            last_event_type,
+            ("response.completed", "response.incomplete"),
+            f"Stream should end with a terminal response event, got {last_event_type}",
+        )
         self.assertGreater(len(complete_response), 0)
 
     # =========================================================================
@@ -491,6 +522,7 @@ class LLMTests(ServerTestBase):
             messages=messages,
             stop=["2."],  # Stop before the second item
             max_completion_tokens=50,
+            **self.no_reasoning(),
         )
 
         response = completion.choices[0].message.content
@@ -544,6 +576,7 @@ class LLMTests(ServerTestBase):
             ],
             tools=[SAMPLE_TOOL],
             max_completion_tokens=50,
+            **self.no_reasoning(),
         )
 
         tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
@@ -569,6 +602,7 @@ class LLMTests(ServerTestBase):
             tools=[SAMPLE_TOOL],
             max_completion_tokens=50,
             stream=True,
+            **self.no_reasoning(),
         )
 
         tool_call_count = 0
@@ -1165,6 +1199,7 @@ class LLMTests(ServerTestBase):
             messages=shared_history,
             max_completion_tokens=10,
             stream=False,
+            **self.no_reasoning(),
         )
         followup = shared_history + [
             {"role": "assistant", "content": first.choices[0].message.content},
@@ -1175,6 +1210,7 @@ class LLMTests(ServerTestBase):
             messages=followup,
             max_completion_tokens=10,
             stream=False,
+            **self.no_reasoning(),
         )
 
         response = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)

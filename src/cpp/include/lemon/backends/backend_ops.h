@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "lemon/engine_twins.h"   // ServableRepos (engine-twin synthesis)
 #include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
 
 namespace lemon {
@@ -94,6 +95,26 @@ public:
     virtual std::vector<ModelInfo> discover_models(const BackendOpsContext& ctx) const {
         (void)ctx;
         return {};
+    }
+
+    // Repositories this backend can serve when they appear in ANOTHER recipe's
+    // entries, mapped to the twin's deployment label. Non-empty opts the recipe
+    // into engine-twin synthesis (see lemon/engine_twins.h). Default: none.
+    virtual engine_twins::ServableRepos servable_checkpoint_repositories(
+        const std::map<std::string, ModelInfo>& models) const {
+        (void)models;
+        return {};
+    }
+
+    // Whether this backend can actually serve one candidate checkpoint of a
+    // servable repository (e.g. an engine that implements only some
+    // quantizations refuses the rest). Only called for candidates that already
+    // matched a servable repository. Default: every candidate qualifies.
+    virtual bool serves_model_checkpoint(const ModelInfo& info,
+                                         const engine_twins::ServableRepo& repo) const {
+        (void)info;
+        (void)repo;
+        return true;
     }
 
     // Whether a model's local artifacts are present. Default: the shared registry

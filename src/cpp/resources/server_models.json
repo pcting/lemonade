@@ -2888,5 +2888,76 @@
         ],
         "size": 81.0,
         "min_resident_gb": 16.0
+    },
+    "Qwen3.8-27B-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL",
+            "draft": "z-lab/Qwen3.8-27B-DFlash2-GGUF:Qwen3.8-27B-DFlash2-Q4_K_M.gguf",
+            "mmproj": "unsloth/Qwen3.8-27B-GGUF:mmproj-BF16.gguf"
+        },
+        "recipe": "gufo",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "hot",
+            "vision",
+            "reasoning",
+            "tool-calling",
+            "dflash"
+        ],
+        "size": 17.0
+    },
+    "DeepSeek-V4-Flash-GGUF": {
+        "checkpoints": {
+            "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+            "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-DSpark-support-0731.gguf"
+        },
+        "recipe": "gufo",
+        "labels": [
+            "chat",
+            "reasoning",
+            "dspark"
+        ],
+        "size": 81.0
+    },
+    "Qwen3-ASR-1.7B": {
+        "checkpoint": "Qwen/Qwen3-ASR-1.7B",
+        "recipe": "gufo",
+        "labels": [
+            "transcription"
+        ],
+        "size": 3.6
+    },
+    "Qwen3-TTS-1.7B-CustomVoice": {
+        "checkpoint": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "recipe": "gufo",
+        "labels": [
+            "tts"
+        ],
+        "size": 4.0
+    },
+    "Qwen3-TTS-1.7B-VoiceDesign": {
+        "checkpoint": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "recipe": "gufo",
+        "labels": [
+            "tts"
+        ],
+        "size": 4.0
+    },
+    "Qwen3-TTS-1.7B-Base": {
+        "checkpoint": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        "recipe": "gufo",
+        "labels": [
+            "tts"
+        ],
+        "size": 4.0
+    },
+    "Qwen-Image-2.1": {
+        "checkpoint": "Qwen/Qwen-Image-2.1",
+        "recipe": "gufo",
+        "labels": [
+            "image"
+        ],
+        "size": 33.0
     }
 }

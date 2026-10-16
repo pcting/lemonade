@@ -5854,7 +5854,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 
             auto response = router_->responses(request_json);
 
-            if (response.contains("error")) {
+            // OpenAI-compliant backends always include the error field in a
+            // successful Responses payload (with a null value); only a non-null
+            // error is a failure.
+            if (response.contains("error") && !response["error"].is_null()) {
                 LOG(ERROR, "Server") << "Responses backend error: " << response["error"].dump() << std::endl;
                 set_error_response(response, res);
                 return;
@@ -7514,6 +7517,13 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
             utils::set_models_dir(dir);
             model_manager_->invalidate_models_cache();
+        } else if (key == "engine_twins") {
+            // Generated entries appear/disappear with the switch; drop the
+            // model cache so the next listing reflects it.
+            LOG(INFO, "Server") << "Engine twins "
+                                << (config_->engine_twins_enabled() ? "enabled" : "disabled")
+                                << std::endl;
+            model_manager_->invalidate_models_cache();
         } else if (key == "telemetry") {
             if (value.is_object()) {
                 if (value.contains("enabled")) {
@@ -8239,6 +8249,17 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             res.set_content(response.dump(), "application/json");
         }
 
+    } catch (const backends::BackendNotInstallable& e) {
+        // A system-managed engine has nothing to install. This is the caller's
+        // situation, not a server fault, so answer as a client error carrying the
+        // remediation instead of a 500.
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "invalid_request_error"},
+            {"code", "backend_not_installable"}
+        }}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_install: " << e.what() << std::endl;
         res.status = 500;
@@ -8302,6 +8323,18 @@ void Server::handle_install_dry_run(const httplib::Request& req, httplib::Respon
             {"supported", supported}
         };
         res.set_content(response.dump(), "application/json");
+    } catch (const backends::BackendNotInstallable& e) {
+        SystemInfo::set_rocm_arch_override("");
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "invalid_request_error"},
+            {"code", "backend_not_installable"}
+        }}};
+        if (!requested_arch.empty()) {
+            error["arch"] = requested_arch;
+        }
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         SystemInfo::set_rocm_arch_override("");
         res.status = 500;

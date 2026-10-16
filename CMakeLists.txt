@@ -207,6 +207,7 @@ set(LEMON_BACKENDS
     "flm|fastflowlm"
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
+    "gufo|gufo"
     "thenoise|thenoise"
     "ds4|ds4"
     "cloud|cloud"
@@ -2289,6 +2290,9 @@ add_custom_target(embeddable
         "$<TARGET_FILE_DIR:lemond>/resources/vllm_model_config.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/gufo_compat.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/defaults.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
@@ -3543,4 +3547,42 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelSyncAndAutoUpdateTest CI ON COMMAND test_model_sync_and_auto_update)
+endif()
+
+set(_ENGINE_TWINS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_engine_twins.cpp")
+if(BUILD_TESTING AND EXISTS "${_ENGINE_TWINS_TEST_SRC}")
+    add_executable(test_engine_twins test/cpp/test_engine_twins.cpp)
+    target_link_libraries(test_engine_twins PRIVATE lemonade-server-core)
+    # Its permissive-case verdicts read the shipped compatibility table, so the
+    # resource copy has to exist before it runs.
+    add_dependencies(test_engine_twins copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(EngineTwinsTest CI ON COMMAND test_engine_twins)
+endif()
+
+set(_GUFO_COMPAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gufo_compat.cpp")
+if(BUILD_TESTING AND EXISTS "${_GUFO_COMPAT_TEST_SRC}")
+    add_executable(test_gufo_compat test/cpp/test_gufo_compat.cpp)
+    target_link_libraries(test_gufo_compat PRIVATE lemonade-server-core)
+    target_compile_definitions(test_gufo_compat PRIVATE
+        # The suite judges the shipped resources/gufo_compat.json, so the resource
+        # copy has to exist before it runs.
+        GUFO_COMPAT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/fixtures/gufo_compat"
+        # The two registries whose gufo rows the pairing table must cover. Read from
+        # the source tree: the check is about what the registry declares, and a
+        # staged copy would let it pass against a stale file.
+        GUFO_MODEL_CATALOG="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json"
+        GUFO_MODEL_SEED="${CMAKE_CURRENT_SOURCE_DIR}/docker/user_models.json"
+        # Sibling checkout of the engine the table cites; absent on most machines,
+        # where the drift entry reports SKIP instead of claiming a verification it
+        # did not perform. GUFO_SOURCE_DIR overrides at run time.
+        GUFO_SOURCE_DIR_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/../gufo")
+    add_dependencies(test_gufo_compat copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(GufoCompatTest CI ON COMMAND test_gufo_compat)
+    add_cpp_ci_test(GufoCompatDriftTest CI ON COMMAND test_gufo_compat --drift)
+    set_tests_properties(GufoCompatDriftTest PROPERTIES
+        SKIP_REGULAR_EXPRESSION "SKIP: ")
 endif()

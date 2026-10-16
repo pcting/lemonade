@@ -421,17 +421,33 @@ void WrappedServer::start_server(std::unique_ptr<ServerProcess> process,
     }
 
     if (!wait_for_ready(command.ready_endpoint, timeout_seconds)) {
-        stop_server();
-        throw std::runtime_error(server_name_ + " failed to start");
+        // stop_server() reaps a child that has already exited, so its status is
+        // the one detail a caller can act on; carry it in the failure.
+        const std::optional<int> exit_code = stop_server();
+        throw ServerStartFailure(server_name_ + " failed to start", exit_code);
     }
     start_backend_watchdog(command.ready_endpoint);
 }
 
-void WrappedServer::stop_server() {
+std::optional<int> WrappedServer::stop_server() {
     stop_backend_watchdog();
+    std::optional<int> exit_code;
     if (auto process = take_process()) {
         process->stop();
+        exit_code = process->exit_code();
     }
+    record_stopped_exit_code(exit_code);
+    return exit_code;
+}
+
+std::optional<int> WrappedServer::last_stopped_exit_code() const {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    return last_stopped_exit_code_;
+}
+
+void WrappedServer::record_stopped_exit_code(std::optional<int> exit_code) {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    last_stopped_exit_code_ = exit_code;
 }
 
 void WrappedServer::request_backend_reset_from_watchdog(const std::string& reason) {
@@ -452,6 +468,9 @@ void WrappedServer::request_backend_reset_from_watchdog(const std::string& reaso
                                       << reason << "; stopping backend process PID "
                                       << process->handle().pid << std::endl;
         process->stop();
+        // Recorded like stop_server() does, so a backend health state can still
+        // name why the child went away after the process object is gone.
+        record_stopped_exit_code(process->exit_code());
     } else {
         LOG(ERROR, "BackendWatchdog") << server_name_ << " backend marked unavailable: "
                                       << reason << "; no process to stop" << std::endl;

@@ -36,6 +36,7 @@ except ImportError:
 from .capabilities import (
     set_current_config,
     get_capabilities,
+    get_current_config,
     get_test_model,
     WRAPPED_SERVER_CAPABILITIES,
     get_all_wrapped_server_names,
@@ -531,6 +532,26 @@ class ServerTestBase(unittest.TestCase):
                 "(e.g., install the package or run lemond manually)." % PORT
             )
         print("Server is reachable on port %d" % PORT)
+
+        # System-managed backends cannot be auto-installed by the test setup;
+        # the runner image must provision the binary (see docs/dev/testing.md).
+        # Skip with a clear message instead of failing every test downstream.
+        wrapped, _, _ = get_current_config()
+        if wrapped == "gufo":
+            state = "unknown"
+            try:
+                resp = requests.get(
+                    "http://localhost:%d/api/v1/system-info" % PORT, timeout=30
+                )
+                state = resp.json()["recipes"]["gufo"]["backends"]["rocm"]["state"]
+            except Exception:  # noqa: BLE001 - any probe failure means not usable
+                pass
+            if state != "installed":
+                raise unittest.SkipTest(
+                    "gufo is not provisioned on this runner (state: %s). "
+                    "Install gufo or set LEMONADE_GUFO_SERVER_BIN; "
+                    "see docs/dev/testing.md." % state
+                )
 
         # Pre-warm the ROCm (TheRock) runtime so its cold-cache download does not
         # blow the per-request inference timeout inside the first test.

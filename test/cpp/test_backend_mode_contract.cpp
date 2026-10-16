@@ -58,6 +58,12 @@ constexpr uint32_t kChatCompatible = lemon::CAP_EMBEDDINGS | lemon::CAP_RERANKIN
                                      lemon::CAP_STREAMING_TRANSCRIPTION;
 constexpr uint32_t kExclusiveModalities = lemon::CAP_ALL & ~kChatCompatible;
 
+// Backends whose single server class picks its modality per-model at load time
+// (one subprocess per model, modality from that model's deployment mode) can
+// legitimately pair chat with media modes on one class: no process ever serves
+// two of them.
+const std::set<std::string> kMultiModalityDispatchRecipes = {"gufo"};
+
 std::string join(const std::vector<std::string>& items) {
     std::string out;
     for (const auto& item : items) {
@@ -180,7 +186,8 @@ int main() {
         // claim it.
         if (declared.count("chat") != 0) {
             check(recipe + ": declares 'chat' and implements no exclusive modality",
-                  (entry.capabilities & kExclusiveModalities) == 0);
+                  kMultiModalityDispatchRecipes.count(recipe) != 0 ||
+                      (entry.capabilities & kExclusiveModalities) == 0);
         }
 
         // Every mode has a human-readable name, so a new one cannot reach the
@@ -261,6 +268,11 @@ int main() {
         // collection's business, so the one declared mode stands.
         {"collection + transcription", "collection.omni", {"transcription"}, true,
          {"transcription"}, ModelType::TRANSCRIPTION},
+        // gufo dispatches modality per-model, so chat and media modes are each
+        // legal on their own but never together on one model.
+        {"gufo + chat", "gufo", {"chat"}, true, {"chat"}, ModelType::LLM},
+        {"gufo + tts", "gufo", {"tts"}, true, {"tts"}, ModelType::TTS},
+        {"gufo + chat + tts", "gufo", {"chat", "tts"}, false, {}, {}},
     };
 
     for (const auto& c : ingest) {
