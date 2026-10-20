@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-10-20T06:55:12.778899+00:00",
+  "run_id": "38695315146",
+  "run_url": "https://github.com/pcting/lemonade/actions/runs/38695315146",
+  "repo": "pcting/lemonade",
+  "repo_url": "https://github.com/pcting/lemonade",
+  "actions_url": "https://github.com/pcting/lemonade/actions/workflows/benchmark-regression.yml",
+  "commit": "d6b2c39da4c2d539143d56d7b5e960a507e5beb7",
+  "lemonade_version": null,
+  "experimental_forks": [
+    "llamacpp-hrx"
+  ],
+  "by_model_scenario": {},
+  "history": {}
+}
