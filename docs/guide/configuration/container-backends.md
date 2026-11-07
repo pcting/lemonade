@@ -42,6 +42,8 @@ Docker Desktop and rootless Docker can't run container backends. With either one
 
 When `lemond` runs as `lemond.service`, installed by the `.deb`, PPA or `.rpm` package, it runs under the `lemonade` account. The package pulls in Podman unless Docker is already installed, and crun, adds `lemonade` to `render`, and allocates its subordinate UID and GID range, so rootless Podman needs no further setup.
 
+**Inside the Lemonade container:** rootless Podman needs more than a native install, since it is itself nested in a container. See [Container Backends](../install/docker.md#container-backends-eg-gufo-halogen) on the Docker page for the devices, capabilities and volumes.
+
 **`lemond.service` with rootful Podman:** give `lemonade` its own root Podman socket, leaving root's `podman.socket` as it is. Rootful Podman needs the netavark network backend, Podman's default; on Podman 4's older CNI backend, `lemond` cannot reach its containers. Switching root's Podman to netavark (`network_backend = "netavark"` in `/etc/containers/containers.conf`) needs `podman system reset`, which deletes all of root's containers and images.
 
 1. Create `/etc/systemd/system/podman-lemonade.socket`:

@@ -139,31 +139,53 @@ docker run -d \
 >
 > Then use the numbers, e.g. `--group-add 992 --group-add 44`.
 
-### Container Backends (e.g. Gufo)
+### Container Backends (e.g. Gufo, Halogen)
 
-Some recipes, such as `gufo`, run their engine in a rootless Podman container
-that `lemond` starts inside the Lemonade container. That needs a user namespace
-of its own, so run the container with `--privileged`, and make sure the host
-has the `tun` module loaded:
+Some recipes, such as `gufo` and `halogen`, run their engine in a rootless
+Podman container that `lemond` starts inside the Lemonade container. That needs
+a user namespace of its own, so the image must ship Podman, uidmap, crun,
+slirp4netns and fuse-overlayfs (the Dockerfile below does), and the container
+needs the devices and capabilities below in addition to the GPU ones:
 
 ```bash
 docker run -d \
   --name lemonade-server \
-  --privileged \
   -p 13305:13305 \
   -v lemonade-cache:/opt/lemonade/.cache/huggingface \
   -v lemonade-config:/opt/lemonade/.config/lemonade \
+  -v lemonade-containers:/opt/lemonade/.local/share/containers \
   --device=/dev/kfd \
   --device=/dev/dri \
+  --device=/dev/net/tun \
+  --device=/dev/fuse \
+  --cap-add SYS_ADMIN \
+  --security-opt seccomp=unconfined \
+  --security-opt systempaths=unconfined \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
-`--privileged` supplies `/dev/fuse`, which Podman needs for its overlay
-storage, and the capabilities its ID-mapping helpers need. Rootless Podman
-reaches its containers through a TUN device, so the host must provide one:
-`sudo modprobe tun`, and add `tun` to `/etc/modules-load.d/` to keep it across
-reboots. While either is missing, the setup assistant reports
-``podman info` fails` for the backend.
+| Setting | What it is for |
+|---|---|
+| `/dev/fuse` | Podman's overlay storage runs on `fuse-overlayfs`, because its store sits on the container's own overlay filesystem. Without it the pull ends in `fuse: device not found`. |
+| `--cap-add SYS_ADMIN` | The setuid `newuidmap`/`newgidmap` helpers need it to write the subordinate ID mapping. Without it Podman maps only the account's own UID/GID, and pulling an image fails on the first layer that holds `/etc/gshadow`: `potentially insufficient UIDs or GIDs available in user namespace`. |
+| `--security-opt systempaths=unconfined` | Docker mounts `/proc/sys` read-only, but crun and netavark write network sysctls (`net.ipv4.ping_group_range`, `net.ipv6.conf.*`) when they create a container and its network. |
+| `--security-opt seccomp=unconfined` | `slirp4netns` builds its own sandbox with `pivot_root`, which Docker's default seccomp profile blocks: `slirp4netns ... cannot pivot_root to /tmp`. |
+| `/dev/net/tun` | `slirp4netns` gives every rootless Podman network a TUN device, including the internal network `lemond` creates for a backend. |
+| `lemonade-containers` volume | Keeps Podman's store, and with it the backend images (3–7 GB each), across container recreations. Without it every recreate re-downloads them. |
+
+The host provides the TUN device as well: `sudo modprobe tun`, and add `tun` to
+`/etc/modules-load.d/` to keep it across reboots.
+
+`--privileged` also works, and is shorter to write, since it supplies every
+device and capability listed above. The settings above give the backend only
+what it uses.
+
+The setup assistant reports the prerequisites it can test: a missing
+subordinate ID range (`getsubids lemonade` prints no range), a `podman info`
+that fails, and Podman falling back to runc. A missing `/dev/fuse`,
+`/dev/net/tun`, `seccomp=unconfined` or `systempaths=unconfined` passes those
+checks, and fails at the first model load instead, at the point the pull or
+`podman run` reaches it.
 
 ### Docker Run with AMD GPU Passthrough using ROCm on WSL
 
@@ -221,20 +243,32 @@ services:
       - lemonade-data:/opt/lemonade/.cache/lemonade
       # Persist config.json, jobs.json, recipe_options.json, etc.
       - lemonade-config:/opt/lemonade/.config/lemonade
+      # Persist container backends' Podman store (gufo, halogen images)
+      - lemonade-containers:/opt/lemonade/.local/share/containers
     restart: unless-stopped
-    # For AMD GPU (ROCm) on Linux only, also add:
+    # AMD GPU (ROCm) on Linux, and container backends (gufo, halogen).
+    # The container-backend entries are described under "Container Backends"
+    # above; omit them if you only run the binary backends.
     # devices:
     #   - /dev/kfd:/dev/kfd
     #   - /dev/dri:/dev/dri
+    #   - /dev/net/tun                 # container backends only
+    #   - /dev/fuse                    # container backends only
     # group_add:
     #   - video
     #   - render
+    # cap_add:
+    #   - SYS_ADMIN                    # container backends only
+    # security_opt:
+    #   - seccomp=unconfined           # container backends only
+    #   - systempaths=unconfined       # container backends only
 
 volumes:
   lemonade-cache:
   lemonade-llama:
   lemonade-data:
   lemonade-config:
+  lemonade-containers:
 ```
 
 > To configure the llama.cpp backend (e.g., CPU instead of auto-detect), create a `config.json` file in the `lemonade-config` volume with:
@@ -396,7 +430,9 @@ RUN apt-get update && apt-get install -y \
 RUN useradd -r -u 10001 -d /opt/lemonade -s /usr/sbin/nologin lemonade
 
 # Podman maps the container's users onto a subordinate ID range, which useradd
-# allocates only for regular accounts.
+# allocates only for regular accounts. Allocate it here rather than at run time:
+# Podman's store records the mapping it was created with, so a container that
+# starts without it needs `podman system migrate` once the range exists.
 RUN start=$(cat /etc/subuid /etc/subgid | awk -F: \
         'BEGIN { m = 100000 } NF >= 3 { e = $2 + $3; if (e > m) m = e } END { print m }') && \
     usermod --add-subuids "$start-$((start + 65535))" --add-subgids "$start-$((start + 65535))" lemonade
@@ -469,13 +505,30 @@ services:
       - lemonade-data:/opt/lemonade/.cache/lemonade
       # Persist config.json, jobs.json, recipe_options.json, etc.
       - lemonade-config:/opt/lemonade/.config/lemonade
+      # Persist container backends' Podman store (gufo, halogen images)
+      - lemonade-containers:/opt/lemonade/.local/share/containers
     restart: unless-stopped
+    # For container backends (gufo, halogen), see "Container Backends" above.
+    # devices:
+    #   - /dev/kfd
+    #   - /dev/dri
+    #   - /dev/net/tun
+    #   - /dev/fuse
+    # group_add:
+    #   - video
+    #   - render
+    # cap_add:
+    #   - SYS_ADMIN
+    # security_opt:
+    #   - seccomp=unconfined
+    #   - systempaths=unconfined
 
 volumes:
   lemonade-cache:
   lemonade-llama:
   lemonade-data:
   lemonade-config:
+  lemonade-containers:
 
 ```
 
