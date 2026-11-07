@@ -68,13 +68,13 @@ RUN apt-get update && apt-get install -y \
 # Run as an unprivileged user; lemond never needs root at runtime. The home is
 # the application directory: Podman's storage and its rootless helpers resolve
 # it through the account's passwd entry, not through $HOME.
-RUN useradd -r -u 10001 -d /opt/lemonade -s /usr/sbin/nologin lemonade
+RUN useradd -r -u 10001 -s /usr/sbin/nologin lemonade
 
 # Podman maps the container's users onto a subordinate ID range, which useradd
 # allocates only for regular accounts.
-RUN start=$(cat /etc/subuid /etc/subgid | awk -F: \
-        'BEGIN { m = 100000 } NF >= 3 { e = $2 + $3; if (e > m) m = e } END { print m }') && \
-    usermod --add-subuids "$start-$((start + 65535))" --add-subgids "$start-$((start + 65535))" lemonade
+# RUN start=$(cat /etc/subuid /etc/subgid | awk -F: \
+#        'BEGIN { m = 100000 } NF >= 3 { e = $2 + $3; if (e > m) m = e } END { print m }') && \
+#    usermod --add-subuids "$start-$((start + 65535))" --add-subgids "$start-$((start + 65535))" lemonade
 
 # The application directory doubles as the user's HOME so Lemonade's cache and
 # config directories (plus the HuggingFace cache) resolve to writable paths.
