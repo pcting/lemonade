@@ -139,6 +139,32 @@ docker run -d \
 >
 > Then use the numbers, e.g. `--group-add 992 --group-add 44`.
 
+### Container Backends (e.g. Gufo)
+
+Some recipes, such as `gufo`, run their engine in a rootless Podman container
+that `lemond` starts inside the Lemonade container. That needs a user namespace
+of its own, so run the container with `--privileged`, and make sure the host
+has the `tun` module loaded:
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  --privileged \
+  -p 13305:13305 \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
+  -v lemonade-config:/opt/lemonade/.config/lemonade \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+`--privileged` supplies `/dev/fuse`, which Podman needs for its overlay
+storage, and the capabilities its ID-mapping helpers need. Rootless Podman
+reaches its containers through a TUN device, so the host must provide one:
+`sudo modprobe tun`, and add `tun` to `/etc/modules-load.d/` to keep it across
+reboots. While either is missing, the setup assistant reports
+``podman info` fails` for the backend.
+
 ### Docker Run with AMD GPU Passthrough using ROCm on WSL
 
 Make sure you follow install steps described in [ROCm for WSL](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html)
@@ -342,7 +368,10 @@ RUN echo "=== Build directory contents ===" && \
 # # ============================================================
 FROM ubuntu:24.04
 
-# vLLM/Triton JIT-compiles native launcher modules at runtime.
+# vLLM/Triton JIT-compiles native launcher modules at runtime. Container
+# backends run their server inside rootless Podman, which needs uidmap for its
+# subordinate ID helpers, crun to keep the render group, and slirp4netns for
+# the container's network.
 RUN apt-get update && apt-get install -y \
     build-essential \
     libcurl4 \
@@ -354,10 +383,23 @@ RUN apt-get update && apt-get install -y \
     unzip \
     libgomp1 \
     libatomic1 \
+    crun \
+    fuse-overlayfs \
+    podman \
+    slirp4netns \
+    uidmap \
     && rm -rf /var/lib/apt/lists/*
 
-# Run as an unprivileged user; lemond never needs root at runtime.
-RUN useradd -r -u 10001 -s /usr/sbin/nologin lemonade
+# Run as an unprivileged user; lemond never needs root at runtime. The home is
+# the application directory: Podman's storage and its rootless helpers resolve
+# it through the account's passwd entry, not through $HOME.
+RUN useradd -r -u 10001 -d /opt/lemonade -s /usr/sbin/nologin lemonade
+
+# Podman maps the container's users onto a subordinate ID range, which useradd
+# allocates only for regular accounts.
+RUN start=$(cat /etc/subuid /etc/subgid | awk -F: \
+        'BEGIN { m = 100000 } NF >= 3 { e = $2 + $3; if (e > m) m = e } END { print m }') && \
+    usermod --add-subuids "$start-$((start + 65535))" --add-subgids "$start-$((start + 65535))" lemonade
 
 # The application directory doubles as the user's HOME so the HuggingFace and
 # lemonade caches (both derived from $HOME) resolve to writable, owned paths.
@@ -385,6 +427,7 @@ RUN mkdir -p /opt/lemonade/llama/cpu \
     /opt/lemonade/llama/vulkan \
     /opt/lemonade/.cache/huggingface \
     /opt/lemonade/.cache/lemonade \
+    /opt/lemonade/.local/share/containers \
     /opt/lemonade/.config/lemonade && \
     chown -R lemonade:lemonade /opt/lemonade /run/lemonade
 

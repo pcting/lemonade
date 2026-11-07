@@ -40,7 +40,10 @@ RUN echo "=== Build directory contents ===" && \
 # # ============================================================
 FROM ubuntu:24.04
 
-# vLLM/Triton JIT-compiles native launcher modules at runtime.
+# vLLM/Triton JIT-compiles native launcher modules at runtime. Container
+# backends run their server inside rootless Podman, which needs uidmap for its
+# subordinate ID helpers, crun to keep the render group, and slirp4netns for
+# the container's network.
 RUN apt-get update && apt-get install -y \
     build-essential \
     libcurl4 \
@@ -55,10 +58,23 @@ RUN apt-get update && apt-get install -y \
     libgomp1 \
     libatomic1 \
     libreadline8 \
+    crun \
+    fuse-overlayfs \
+    podman \
+    slirp4netns \
+    uidmap \
     && rm -rf /var/lib/apt/lists/*
 
-# Run as an unprivileged user; lemond never needs root at runtime.
-RUN useradd -r -u 10001 -s /usr/sbin/nologin lemonade
+# Run as an unprivileged user; lemond never needs root at runtime. The home is
+# the application directory: Podman's storage and its rootless helpers resolve
+# it through the account's passwd entry, not through $HOME.
+RUN useradd -r -u 10001 -d /opt/lemonade -s /usr/sbin/nologin lemonade
+
+# Podman maps the container's users onto a subordinate ID range, which useradd
+# allocates only for regular accounts.
+RUN start=$(cat /etc/subuid /etc/subgid | awk -F: \
+        'BEGIN { m = 100000 } NF >= 3 { e = $2 + $3; if (e > m) m = e } END { print m }') && \
+    usermod --add-subuids "$start-$((start + 65535))" --add-subgids "$start-$((start + 65535))" lemonade
 
 # The application directory doubles as the user's HOME so Lemonade's cache and
 # config directories (plus the HuggingFace cache) resolve to writable paths.
@@ -86,7 +102,8 @@ RUN mkdir -p /opt/lemonade/llama/cpu \
     /opt/lemonade/llama/vulkan \
     /opt/lemonade/.config/lemonade \
     /opt/lemonade/.cache/huggingface \
-    /opt/lemonade/.cache/lemonade && \
+    /opt/lemonade/.cache/lemonade \
+    /opt/lemonade/.local/share/containers && \
     chown -R lemonade:lemonade /opt/lemonade /run/lemonade
 
 USER lemonade
